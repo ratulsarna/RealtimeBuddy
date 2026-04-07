@@ -22,6 +22,10 @@ type SendEvent = (event:
       model: string;
     }
   | {
+      type: "buddy_ready";
+      model: string;
+    }
+  | {
       type: "status";
       message: string;
     }
@@ -88,6 +92,7 @@ type QuestionAnswer = {
 const DEFAULT_VAULT_PATH = "/Users/ratulsarna/Vault/ObsidianVault";
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const WEB_APP_DIR = path.resolve(SERVER_DIR, "../..");
+const MAX_BUFFERED_AUDIO_CHUNKS = 240;
 
 export class MeetingSession {
   readonly id = crypto.randomUUID();
@@ -117,6 +122,10 @@ export class MeetingSession {
   private bridgeReady = false;
   private bridgeConnecting = false;
   private bridgeConnectionAttempts = 0;
+  private audioQueueOverflowReported = false;
+  private codexStartupPromise: Promise<void> | null = null;
+  private codexModel = "";
+  private codexUnavailableMessage = "";
   private stopped = false;
 
   constructor(options: MeetingSessionOptions) {
@@ -124,14 +133,15 @@ export class MeetingSession {
     this.title = options.title.trim() || "Meeting Buddy";
     this.includeTabAudio = options.includeTabAudio;
     this.sendEvent = options.sendEvent;
+    const safeFileTitle = this.sanitizeTitleForFileName(this.title);
 
     const noteFolder = path.join(this.vaultPath, "Notes", "Dated", this.dateStamp(this.startedAt));
-    const noteFileName = `${this.title} - ${this.fileStamp(this.startedAt)}.md`;
+    const noteFileName = `${safeFileTitle} - ${this.fileStamp(this.startedAt)}.md`;
     this.notePath = path.join(noteFolder, noteFileName);
     this.notePathRelative = path.relative(this.vaultPath, this.notePath);
 
     const logFolder = path.join(WEB_APP_DIR, "output", "session-logs", this.dateStamp(this.startedAt));
-    const logFileName = `${this.title} - ${this.fileStamp(this.startedAt)}.jsonl`;
+    const logFileName = `${safeFileTitle} - ${this.fileStamp(this.startedAt)}.jsonl`;
     this.logPath = path.join(logFolder, logFileName);
     this.logPathRelative = path.relative(WEB_APP_DIR, this.logPath);
   }
@@ -149,8 +159,6 @@ export class MeetingSession {
 
     this.ensureElevenLabsConnected();
 
-    await this.codex.ready();
-
     this.sendEvent({
       type: "session_ready",
       sessionId: this.id,
@@ -158,19 +166,20 @@ export class MeetingSession {
       notePathRelative: this.notePathRelative,
       logPath: this.logPath,
       logPathRelative: this.logPathRelative,
-      model: await this.codex.getSelectedModel(),
+      model: "",
     });
     this.sendEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
     await this.logEvent("session_ready", {
-      model: await this.codex.getSelectedModel(),
+      model: "pending",
     });
 
     this.flushQueuedAudio();
+    void this.ensureCodexReady();
   }
 
   pushAudioChunk(chunk: AudioChunk) {
     if (!this.elevenLabs || !this.bridgeReady) {
-      this.audioQueue.push(chunk);
+      this.enqueueAudioChunk(chunk);
       this.ensureElevenLabsConnected();
       return;
     }
@@ -209,14 +218,16 @@ export class MeetingSession {
   }
 
   ask(question: string) {
-    this.askQueue = this.askQueue.then(async () => {
+    const runAsk = this.askQueue.then(async () => {
       await this.commitTranscript();
+      const model = await this.requireCodexReady();
       const askedAt = this.timeStamp(new Date());
       let answer = "";
       let pendingAnswerDelta = "";
       let answerDeltaTimer: NodeJS.Timeout | null = null;
       await this.logEvent("ask_started", {
         question,
+        model,
         committedTranscriptSegments: this.transcriptSegments.length,
         hadPartialTranscript: Boolean(this.partialTranscript.trim()),
       });
@@ -257,7 +268,8 @@ export class MeetingSession {
       this.sendEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
     });
 
-    return this.askQueue;
+    this.askQueue = runAsk.catch(() => undefined);
+    return runAsk;
   }
 
   commitTranscript() {
@@ -347,9 +359,31 @@ export class MeetingSession {
       this.elevenLabs.sendAudioChunk(chunk);
     }
     this.audioQueue.length = 0;
+    this.audioQueueOverflowReported = false;
     if (queuedChunkCount > 0) {
       void this.logEvent("audio_queue_flushed", {
         count: queuedChunkCount,
+      });
+    }
+  }
+
+  private enqueueAudioChunk(chunk: AudioChunk) {
+    this.audioQueue.push(chunk);
+    if (this.audioQueue.length <= MAX_BUFFERED_AUDIO_CHUNKS) {
+      return;
+    }
+
+    const trimmedCount = this.audioQueue.length - MAX_BUFFERED_AUDIO_CHUNKS;
+    this.audioQueue.splice(0, trimmedCount);
+    if (!this.audioQueueOverflowReported) {
+      this.audioQueueOverflowReported = true;
+      void this.logEvent("audio_queue_trimmed", {
+        trimmedCount,
+        maxBufferedChunks: MAX_BUFFERED_AUDIO_CHUNKS,
+      });
+      this.sendEvent({
+        type: "status",
+        message: "Transcription is offline. Keeping only the most recent audio while reconnecting.",
       });
     }
   }
@@ -387,6 +421,66 @@ export class MeetingSession {
 
   private async writeNote() {
     await writeFile(this.notePath, this.currentMarkdown(), "utf8");
+  }
+
+  private async ensureCodexReady() {
+    if (this.codexUnavailableMessage) {
+      return;
+    }
+
+    if (this.codexModel) {
+      return;
+    }
+
+    if (!this.codexStartupPromise) {
+      this.codexStartupPromise = (async () => {
+        try {
+          await this.codex.ready();
+          const model = await this.codex.getSelectedModel();
+          this.codexModel = model;
+          if (this.stopped) {
+            return;
+          }
+
+          this.sendEvent({
+            type: "buddy_ready",
+            model,
+          });
+          void this.logEvent("codex_ready", {
+            model,
+          });
+        } catch (error) {
+          this.codexUnavailableMessage = `Buddy Q&A unavailable: ${String(error)}`;
+          if (this.stopped) {
+            return;
+          }
+
+          this.sendEvent({
+            type: "status",
+            message: `${this.codexUnavailableMessage} Live capture will continue without Q&A.`,
+          });
+          void this.logEvent("codex_unavailable", {
+            message: this.codexUnavailableMessage,
+          });
+        }
+      })();
+    }
+
+    await this.codexStartupPromise;
+  }
+
+  private async requireCodexReady() {
+    await this.ensureCodexReady();
+
+    if (this.codexUnavailableMessage) {
+      throw new Error(this.codexUnavailableMessage);
+    }
+
+    if (!this.codexModel) {
+      throw new Error("Buddy Q&A is still starting. Please try again in a moment.");
+    }
+
+    return this.codexModel;
   }
 
   private async logEvent(type: string, payload: Record<string, string | number | boolean>) {
@@ -610,5 +704,21 @@ export class MeetingSession {
     const seconds = `${date.getSeconds()}`.padStart(2, "0");
     const milliseconds = `${date.getMilliseconds()}`.padStart(3, "0");
     return `${hours}-${minutes}-${seconds}-${milliseconds}`;
+  }
+
+  private sanitizeTitleForFileName(title: string) {
+    const sanitized = title
+      .normalize("NFKC")
+      .replace(/[<>:"/\\|?*\u0000-\u001F]+/gu, " ")
+      .replace(/\.\.+/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim()
+      .replace(/^[. ]+|[. ]+$/gu, "");
+
+    if (!sanitized || sanitized === "." || sanitized === "..") {
+      return "Meeting Buddy";
+    }
+
+    return sanitized;
   }
 }

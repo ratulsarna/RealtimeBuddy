@@ -58,6 +58,7 @@ export function MeetingBuddyApp() {
   const [currentAnswer, setCurrentAnswer] = useState("");
   const [questionAnswers, setQuestionAnswers] = useState<QuestionAnswer[]>([]);
   const [audioDiagnostics, setAudioDiagnostics] = useState<AudioDiagnostics | null>(null);
+  const [isAsking, setIsAsking] = useState(false);
 
   const socketRef = useRef<WebSocket | null>(null);
   const captureRef = useRef<AudioCaptureHandle | null>(null);
@@ -117,12 +118,14 @@ export function MeetingBuddyApp() {
     setTranscriptEntries([]);
     setQuestionAnswers([]);
     setCurrentAnswer("");
+    setIsAsking(false);
     setNoteMarkdown("");
     setNotePathRelative("");
     setLogPathRelative("");
     setAudioDiagnostics(null);
     setStatusMessage("Requesting microphone access...");
     answerBufferRef.current = "";
+    pendingQuestionRef.current = "";
     if (answerFlushTimerRef.current !== null) {
       window.clearTimeout(answerFlushTimerRef.current);
       answerFlushTimerRef.current = null;
@@ -200,6 +203,7 @@ export function MeetingBuddyApp() {
         socket.onclose = () => {
           setConnectionState("idle");
           setAudioLevel(0);
+          setIsAsking(false);
           setStatusMessage((current) => (current === "Session stopped." ? current : "Session closed."));
           captureRef.current?.stop();
           captureRef.current = null;
@@ -230,7 +234,9 @@ export function MeetingBuddyApp() {
     }
 
     pendingQuestionRef.current = trimmedQuestion;
+    setIsAsking(true);
     setCurrentAnswer("");
+    answerBufferRef.current = "";
     socketRef.current.send(
       JSON.stringify({
         type: "ask",
@@ -247,6 +253,11 @@ export function MeetingBuddyApp() {
       setLogPathRelative(event.logPathRelative);
       setModelName(event.model);
       setStatusMessage(`Listening live on ${selectedMicLabel}.`);
+      return;
+    }
+
+    if (event.type === "buddy_ready") {
+      setModelName(event.model);
       return;
     }
 
@@ -312,6 +323,7 @@ export function MeetingBuddyApp() {
         answerFlushTimerRef.current = null;
       }
       answerBufferRef.current = "";
+      setIsAsking(false);
       setQuestionAnswers((current) => [
         {
           question: pendingQuestionRef.current,
@@ -319,17 +331,26 @@ export function MeetingBuddyApp() {
         },
         ...current,
       ]);
+      pendingQuestionRef.current = "";
       setCurrentAnswer("");
       return;
     }
 
     if (event.type === "error") {
+      if (answerFlushTimerRef.current !== null) {
+        window.clearTimeout(answerFlushTimerRef.current);
+        answerFlushTimerRef.current = null;
+      }
+      answerBufferRef.current = "";
+      setCurrentAnswer("");
+      setIsAsking(false);
       setStatusMessage(event.message);
       return;
     }
 
     if (event.type === "session_stopped") {
       setConnectionState("idle");
+      setIsAsking(false);
       setStatusMessage("Session stopped.");
       socketRef.current?.close();
       socketRef.current = null;
@@ -338,7 +359,7 @@ export function MeetingBuddyApp() {
 
   const canStart = connectionState === "idle";
   const canStop = connectionState === "live" || connectionState === "starting";
-  const canAsk = connectionState === "live" && currentAnswer === "";
+  const canAsk = connectionState === "live" && !isAsking;
 
   return (
     <main className="grain relative min-h-screen overflow-hidden px-4 py-5 md:px-8 md:py-8">

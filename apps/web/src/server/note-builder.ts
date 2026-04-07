@@ -27,7 +27,7 @@ type NoteContent = {
 export function buildMeetingNote(content: NoteContent): string {
   const latestNotes = content.transcriptSegments.slice(-8);
   const provisionalNotes = content.provisionalSegments.slice(-4);
-  const questionAnswers = content.questionAnswers.slice(-6);
+  const questionAnswers = content.questionAnswers.slice(0, 6);
   const allLiveNotes = [...latestNotes, ...provisionalNotes];
 
   const liveNotes =

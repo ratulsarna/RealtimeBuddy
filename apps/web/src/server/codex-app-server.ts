@@ -88,9 +88,16 @@ type TurnCompletedNotification = {
 type PendingRequest = {
   resolve: (value: JsonValue) => void;
   reject: (message: string) => void;
+  timeout: NodeJS.Timeout;
 };
 
 type NotificationListener = (notification: JsonRpcNotification) => void;
+
+type PendingTurn = {
+  reject: (message: string) => void;
+  timeout: NodeJS.Timeout;
+  listener: NotificationListener;
+};
 
 const PREFERRED_MODELS = [
   process.env.CODEX_MODEL ?? "",
@@ -98,6 +105,8 @@ const PREFERRED_MODELS = [
   "gpt-5.3-codex",
   "gpt-5.4",
 ];
+const REQUEST_TIMEOUT_MS = 20_000;
+const TURN_TIMEOUT_MS = 90_000;
 
 function isAgentMessageItem(
   item: ItemCompletedNotification["item"]
@@ -109,8 +118,10 @@ export class CodexAppServer {
   private readonly process: ChildProcessWithoutNullStreams;
   private readonly pendingRequests = new Map<string, PendingRequest>();
   private readonly notificationListeners = new Set<NotificationListener>();
+  private readonly pendingTurns = new Map<string, PendingTurn>();
   private readonly selectedModelPromise: Promise<string>;
   private threadIdPromise: Promise<string> | null = null;
+  private closedMessage: string | null = null;
 
   constructor() {
     this.process = spawn("codex", ["app-server", "--listen", "stdio://"], {
@@ -132,6 +143,17 @@ export class CodexAppServer {
       if (message) {
         console.log(`[codex-app-server] ${message}`);
       }
+    });
+
+    this.process.on("error", (error) => {
+      this.failPendingWork(`Codex app-server error: ${error.message}`);
+    });
+
+    this.process.on("exit", (code, signal) => {
+      const reason =
+        this.closedMessage ??
+        `Codex app-server exited${signal ? ` via ${signal}` : ` with code ${code ?? "unknown"}`}.`;
+      this.failPendingWork(reason);
     });
 
     this.selectedModelPromise = this.bootstrap();
@@ -176,6 +198,12 @@ export class CodexAppServer {
       const turnId = turn.turn.id;
       let answer = "";
 
+      const timeout = setTimeout(() => {
+        this.notificationListeners.delete(listener);
+        this.pendingTurns.delete(turnId);
+        reject("Codex app-server timed out waiting for the assistant reply.");
+      }, TURN_TIMEOUT_MS);
+
       const listener: NotificationListener = (notification) => {
         if (notification.method === "item/agentMessage/delta") {
           const params = notification.params as unknown as AgentMessageDeltaNotification;
@@ -196,7 +224,9 @@ export class CodexAppServer {
         if (notification.method === "turn/completed") {
           const params = notification.params as unknown as TurnCompletedNotification;
           if (params.turn.id === turnId) {
+            clearTimeout(timeout);
             this.notificationListeners.delete(listener);
+            this.pendingTurns.delete(turnId);
             if (params.turn.status === "failed" && params.turn.error) {
               reject(params.turn.error.message);
               return;
@@ -207,10 +237,17 @@ export class CodexAppServer {
       };
 
       this.notificationListeners.add(listener);
+      this.pendingTurns.set(turnId, {
+        reject,
+        timeout,
+        listener,
+      });
     });
   }
 
   close() {
+    this.closedMessage = "Codex app-server closed.";
+    this.failPendingWork(this.closedMessage);
     this.process.kill();
   }
 
@@ -286,6 +323,10 @@ export class CodexAppServer {
   }
 
   private notify(method: string, params: JsonObject) {
+    if (this.closedMessage || this.process.stdin.destroyed) {
+      return;
+    }
+
     const message = JSON.stringify({
       method,
       params,
@@ -295,6 +336,10 @@ export class CodexAppServer {
   }
 
   private async request<T extends JsonValue>(method: string, params: JsonObject) {
+    if (this.closedMessage || this.process.stdin.destroyed) {
+      throw new Error(this.closedMessage ?? "Codex app-server is unavailable.");
+    }
+
     const id = crypto.randomUUID();
     const message = JSON.stringify({
       id,
@@ -303,9 +348,15 @@ export class CodexAppServer {
     });
 
     const promise = new Promise<JsonValue>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        reject(`Codex app-server timed out waiting for ${method}.`);
+      }, REQUEST_TIMEOUT_MS);
+
       this.pendingRequests.set(id, {
         resolve,
         reject,
+        timeout,
       });
     });
 
@@ -333,6 +384,7 @@ export class CodexAppServer {
       }
 
       this.pendingRequests.delete(message.id);
+      clearTimeout(pending.timeout);
 
       if (message.error) {
         pending.reject(message.error.message);
@@ -345,6 +397,25 @@ export class CodexAppServer {
 
     for (const listener of this.notificationListeners) {
       listener(message);
+    }
+  }
+
+  private failPendingWork(message: string) {
+    if (!this.closedMessage) {
+      this.closedMessage = message;
+    }
+
+    for (const [id, pending] of this.pendingRequests) {
+      clearTimeout(pending.timeout);
+      pending.reject(message);
+      this.pendingRequests.delete(id);
+    }
+
+    for (const [turnId, pendingTurn] of this.pendingTurns) {
+      clearTimeout(pendingTurn.timeout);
+      this.notificationListeners.delete(pendingTurn.listener);
+      pendingTurn.reject(message);
+      this.pendingTurns.delete(turnId);
     }
   }
 }

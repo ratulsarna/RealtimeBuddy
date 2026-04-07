@@ -43,6 +43,10 @@ export type ServerEvent =
       model: string;
     }
   | {
+      type: "buddy_ready";
+      model: string;
+    }
+  | {
       type: "status";
       message: string;
     }
