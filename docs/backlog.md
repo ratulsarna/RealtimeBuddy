@@ -5,7 +5,7 @@
 1. Improve microphone sensitivity and gain tuning.
 2. Add pause and resume for the same session.
 3. Add language preference controls, especially for Hindi.
-4. Investigate speaker attribution strategy.
+4. Decouple frontend and backend for remote use.
 
 ## Items
 
@@ -76,27 +76,30 @@ Notes:
 - ElevenLabs realtime STT supports an optional `language_code` parameter.
 - If the language is known ahead of time, their docs say it can improve transcription performance.
 
-### 4. Speaker detection and attribution
+### 4. Decouple frontend and backend for remote use
 
-Status: Research / design
+Status: Planned
 
-Question:
-- Is this possible with ElevenLabs?
+Why:
+- The long-term usage model is remote: Ratul should be able to use the product from a phone or laptop outside the house, with the backend running elsewhere.
+- The current code already splits responsibilities logically, but the deployment model is still coupled inside `apps/web`.
 
-Current answer:
-- ElevenLabs supports speaker diarization on `scribe_v2` batch transcription.
-- ElevenLabs does not currently prioritize realtime speaker diarization for `scribe_v2_realtime`.
-- Their public realtime page explicitly says speaker diarization is not a priority for the realtime model right now.
+Target architecture:
+- Frontend captures audio, renders transcript / notes / Q&A, and streams events to a remote backend.
+- Backend owns session state, ElevenLabs integration, Codex integration, logging, and note writing.
+- Frontend should not assume same-origin `/ws`; it should talk to an explicit configurable backend host.
 
-Implication for us:
-- For live meetings, native ElevenLabs realtime diarization is not something we should rely on today.
-- If we want live speaker attribution, we will likely need one of these paths:
-- Build a local attribution layer on top of the live stream.
-- Post-process committed transcript chunks with a second pass.
-- Explore a different realtime diarization provider later if this becomes critical.
+Likely work:
+- Extract the current websocket/session server into a standalone backend app.
+- Introduce shared protocol/types in `packages/shared`.
+- Add explicit frontend config for a remote API / websocket base URL.
+- Keep browser/mobile clients thin so the future mobile app can reuse the same backend contract.
+- Add auth before exposing the backend remotely.
+- Verify the audio-streaming flow works against a non-local backend with real network latency.
 
 Notes:
-- Batch `scribe_v2` also supports multichannel transcription and diarization-related controls like `diarize`, `num_speakers`, and `diarization_threshold`.
+- This is not about turning the project into SaaS right now.
+- The goal is personal remote usability: coffee shop, phone-only, backend elsewhere.
 
 ## Source notes
 

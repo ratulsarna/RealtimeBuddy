@@ -11,6 +11,17 @@ export type ClientEvent =
       sampleRate: number;
     }
   | {
+      type: "audio_debug";
+      rms: number;
+      peak: number;
+      gateOpen: boolean;
+      openThreshold: number;
+      closeThreshold: number;
+      candidateChunks: number;
+      sentChunks: number;
+      droppedChunks: number;
+    }
+  | {
       type: "commit_transcript";
     }
   | {

@@ -62,6 +62,11 @@ export class MeetingBroker {
       return;
     }
 
+    if (message.type === "audio_debug") {
+      state.session.logAudioDebug(message);
+      return;
+    }
+
     if (message.type === "commit_transcript") {
       await state.session.commitTranscript();
       return;

@@ -15,6 +15,16 @@ type StartAudioCaptureOptions = {
   onChunk: (pcmBase64: string, sampleRate: number) => void;
   onLevel?: (level: number) => void;
   onSpeechPause?: () => void;
+  onDebug?: (diagnostics: {
+    rms: number;
+    peak: number;
+    gateOpen: boolean;
+    openThreshold: number;
+    closeThreshold: number;
+    candidateChunks: number;
+    sentChunks: number;
+    droppedChunks: number;
+  }) => void;
 };
 
 type BufferedChunk = {
@@ -34,6 +44,17 @@ type AudioGateMessage =
     }
   | {
       type: "speech_pause";
+    }
+  | {
+      type: "debug";
+      rms: number;
+      peak: number;
+      gateOpen: boolean;
+      openThreshold: number;
+      closeThreshold: number;
+      candidateChunks: number;
+      sentChunks: number;
+      droppedChunks: number;
     };
 
 export async function startAudioCapture(
@@ -84,6 +105,7 @@ export async function startAudioCapture(
   const highPass = audioContext.createBiquadFilter();
   const lowPass = audioContext.createBiquadFilter();
   const compressor = audioContext.createDynamicsCompressor();
+  const speechGain = audioContext.createGain();
 
   highPass.type = "highpass";
   highPass.frequency.value = 140;
@@ -98,12 +120,14 @@ export async function startAudioCapture(
   compressor.ratio.value = 3;
   compressor.attack.value = 0.003;
   compressor.release.value = 0.2;
+  speechGain.gain.value = 1.8;
 
   const micSource = audioContext.createMediaStreamSource(micStream);
   micSource.connect(highPass);
   highPass.connect(lowPass);
   lowPass.connect(compressor);
-  compressor.connect(mixer);
+  compressor.connect(speechGain);
+  speechGain.connect(mixer);
 
   let displaySource: MediaStreamAudioSourceNode | null = null;
   if (tabAudioEnabled && displayStream) {
@@ -131,6 +155,20 @@ export async function startAudioCapture(
       return;
     }
 
+    if (message.type === "debug") {
+      options.onDebug?.({
+        rms: message.rms,
+        peak: message.peak,
+        gateOpen: message.gateOpen,
+        openThreshold: message.openThreshold,
+        closeThreshold: message.closeThreshold,
+        candidateChunks: message.candidateChunks,
+        sentChunks: message.sentChunks,
+        droppedChunks: message.droppedChunks,
+      });
+      return;
+    }
+
     options.onSpeechPause?.();
   };
 
@@ -141,6 +179,7 @@ export async function startAudioCapture(
       processor.disconnect();
       mixer.disconnect();
       compressor.disconnect();
+      speechGain.disconnect();
       lowPass.disconnect();
       highPass.disconnect();
       micSource.disconnect();

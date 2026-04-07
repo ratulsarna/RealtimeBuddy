@@ -186,6 +186,28 @@ export class MeetingSession {
     this.elevenLabs.sendAudioChunk(chunk);
   }
 
+  logAudioDebug(diagnostics: {
+    rms: number;
+    peak: number;
+    gateOpen: boolean;
+    openThreshold: number;
+    closeThreshold: number;
+    candidateChunks: number;
+    sentChunks: number;
+    droppedChunks: number;
+  }) {
+    void this.logEvent("audio_debug", {
+      rms: Number(diagnostics.rms.toFixed(4)),
+      peak: Number(diagnostics.peak.toFixed(4)),
+      gateOpen: diagnostics.gateOpen,
+      openThreshold: Number(diagnostics.openThreshold.toFixed(4)),
+      closeThreshold: Number(diagnostics.closeThreshold.toFixed(4)),
+      candidateChunks: diagnostics.candidateChunks,
+      sentChunks: diagnostics.sentChunks,
+      droppedChunks: diagnostics.droppedChunks,
+    });
+  }
+
   ask(question: string) {
     this.askQueue = this.askQueue.then(async () => {
       await this.commitTranscript();

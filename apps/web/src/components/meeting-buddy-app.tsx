@@ -26,6 +26,17 @@ type QuestionAnswer = {
   answer: string;
 };
 
+type AudioDiagnostics = {
+  rms: number;
+  peak: number;
+  gateOpen: boolean;
+  openThreshold: number;
+  closeThreshold: number;
+  candidateChunks: number;
+  sentChunks: number;
+  droppedChunks: number;
+};
+
 type ConnectionState = "idle" | "starting" | "live" | "stopping";
 
 export function MeetingBuddyApp() {
@@ -46,6 +57,7 @@ export function MeetingBuddyApp() {
   const [modelName, setModelName] = useState("");
   const [currentAnswer, setCurrentAnswer] = useState("");
   const [questionAnswers, setQuestionAnswers] = useState<QuestionAnswer[]>([]);
+  const [audioDiagnostics, setAudioDiagnostics] = useState<AudioDiagnostics | null>(null);
 
   const socketRef = useRef<WebSocket | null>(null);
   const captureRef = useRef<AudioCaptureHandle | null>(null);
@@ -96,6 +108,7 @@ export function MeetingBuddyApp() {
     setNoteMarkdown("");
     setNotePathRelative("");
     setLogPathRelative("");
+    setAudioDiagnostics(null);
     setStatusMessage("Requesting microphone access...");
     answerBufferRef.current = "";
     if (answerFlushTimerRef.current !== null) {
@@ -134,6 +147,21 @@ export function MeetingBuddyApp() {
       },
       onLevel: (level) => {
         setAudioLevel(level);
+      },
+      onDebug: (diagnostics) => {
+        setAudioDiagnostics(diagnostics);
+
+        const socket = socketRef.current;
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          return;
+        }
+
+        socket.send(
+          JSON.stringify({
+            type: "audio_debug",
+            ...diagnostics,
+          })
+        );
       },
     })
       .then((capture) => {
@@ -344,6 +372,11 @@ export function MeetingBuddyApp() {
                 {logPathRelative ? (
                   <span className="rounded-full border border-[var(--line)] px-3 py-1">{logPathRelative}</span>
                 ) : null}
+                {audioDiagnostics ? (
+                  <span className="rounded-full border border-[var(--line)] px-3 py-1">
+                    gate {audioDiagnostics.gateOpen ? "open" : "closed"}
+                  </span>
+                ) : null}
               </div>
             </div>
           </div>
@@ -432,6 +465,18 @@ export function MeetingBuddyApp() {
                       />
                     </div>
                   </div>
+                  {audioDiagnostics ? (
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[var(--ink-soft)] md:grid-cols-4">
+                      <span>RMS {audioDiagnostics.rms.toFixed(4)}</span>
+                      <span>Peak {audioDiagnostics.peak.toFixed(4)}</span>
+                      <span>Gate {audioDiagnostics.gateOpen ? "open" : "closed"}</span>
+                      <span>Candidates {audioDiagnostics.candidateChunks}</span>
+                      <span>Open {audioDiagnostics.openThreshold.toFixed(3)}</span>
+                      <span>Close {audioDiagnostics.closeThreshold.toFixed(3)}</span>
+                      <span>Sent {audioDiagnostics.sentChunks}</span>
+                      <span>Dropped {audioDiagnostics.droppedChunks}</span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
