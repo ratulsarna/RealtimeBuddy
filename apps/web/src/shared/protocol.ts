@@ -41,11 +41,13 @@ export type ServerEvent =
     }
   | {
       type: "transcript_provisional";
+      provisionalId: string;
       text: string;
       provisionalAt: string;
     }
   | {
       type: "transcript_committed";
+      resolvedProvisionalId: string;
       text: string;
       committedAt: string;
     }

@@ -10,7 +10,13 @@ import {
 } from "@/lib/audio-capture";
 import { type ServerEvent } from "@/shared/protocol";
 
-type TranscriptEntry = {
+type PendingTranscriptEntry = {
+  id: string;
+  text: string;
+  at: string;
+};
+
+type CommittedTranscriptEntry = {
   text: string;
   at: string;
 };
@@ -31,8 +37,8 @@ export function MeetingBuddyApp() {
   const [selectedMicId, setSelectedMicId] = useState("");
   const [audioLevel, setAudioLevel] = useState(0);
   const [partialTranscript, setPartialTranscript] = useState("");
-  const [provisionalEntries, setProvisionalEntries] = useState<TranscriptEntry[]>([]);
-  const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
+  const [provisionalEntries, setProvisionalEntries] = useState<PendingTranscriptEntry[]>([]);
+  const [transcriptEntries, setTranscriptEntries] = useState<CommittedTranscriptEntry[]>([]);
   const [noteMarkdown, setNoteMarkdown] = useState("");
   const [notePathRelative, setNotePathRelative] = useState("");
   const [logPathRelative, setLogPathRelative] = useState("");
@@ -228,6 +234,7 @@ export function MeetingBuddyApp() {
       setProvisionalEntries((current) => [
         ...current,
         {
+          id: event.provisionalId,
           text: event.text,
           at: event.provisionalAt,
         },
@@ -237,7 +244,11 @@ export function MeetingBuddyApp() {
 
     if (event.type === "transcript_committed") {
       setPartialTranscript("");
-      setProvisionalEntries((current) => current.slice(1));
+      setProvisionalEntries((current) =>
+        event.resolvedProvisionalId
+          ? current.filter((entry) => entry.id !== event.resolvedProvisionalId)
+          : current.slice(1)
+      );
       setTranscriptEntries((current) => [
         {
           text: event.text,

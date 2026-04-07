@@ -31,11 +31,13 @@ type SendEvent = (event:
     }
   | {
       type: "transcript_provisional";
+      provisionalId: string;
       text: string;
       provisionalAt: string;
     }
   | {
       type: "transcript_committed";
+      resolvedProvisionalId: string;
       text: string;
       committedAt: string;
     }
@@ -72,6 +74,7 @@ type TranscriptSegment = {
 };
 
 type ProvisionalSegment = {
+  id: string;
   text: string;
   provisionalAt: string;
 };
@@ -103,6 +106,7 @@ export class MeetingSession {
   private readonly logPathRelative: string;
   private readonly codex = new CodexAppServer();
   private readonly audioQueue: AudioChunk[] = [];
+  private readonly pendingCommitProvisionalIds: string[] = [];
 
   private elevenLabs: ElevenLabsBridge | null = null;
   private partialTranscript = "";
@@ -110,6 +114,10 @@ export class MeetingSession {
   private askQueue = Promise.resolve();
   private commitQueue = Promise.resolve();
   private audioChunkCount = 0;
+  private bridgeReady = false;
+  private bridgeConnecting = false;
+  private bridgeConnectionAttempts = 0;
+  private stopped = false;
 
   constructor(options: MeetingSessionOptions) {
     this.sampleRate = options.sampleRate;
@@ -139,24 +147,7 @@ export class MeetingSession {
       sampleRate: this.sampleRate,
     });
 
-    this.elevenLabs = new ElevenLabsBridge({
-      sampleRate: this.sampleRate,
-      onStatus: (message) => {
-        void this.logEvent("status", { message });
-        this.sendEvent({ type: "status", message });
-      },
-      onPartialTranscript: (text) => {
-        this.partialTranscript = text;
-        void this.logEvent("transcript_partial", {
-          text,
-          charCount: text.length,
-        });
-        this.sendEvent({ type: "transcript_partial", text });
-      },
-      onCommittedTranscript: (text) => {
-        void this.handleCommittedTranscript(text);
-      },
-    });
+    this.ensureElevenLabsConnected();
 
     await this.codex.ready();
 
@@ -178,8 +169,9 @@ export class MeetingSession {
   }
 
   pushAudioChunk(chunk: AudioChunk) {
-    if (!this.elevenLabs) {
+    if (!this.elevenLabs || !this.bridgeReady) {
       this.audioQueue.push(chunk);
+      this.ensureElevenLabsConnected();
       return;
     }
 
@@ -248,23 +240,36 @@ export class MeetingSession {
 
   commitTranscript() {
     this.commitQueue = this.commitQueue.then(async () => {
-      if (!this.partialTranscript.trim() || !this.elevenLabs) {
+      if (!this.partialTranscript.trim() || !this.elevenLabs || !this.bridgeReady) {
         return;
       }
 
-      this.snapshotPartialTranscript();
+      const commitPromise = this.elevenLabs.commit();
+      if (!commitPromise) {
+        return;
+      }
+
+      const provisionalId = this.snapshotPartialTranscript();
+      if (provisionalId) {
+        this.pendingCommitProvisionalIds.push(provisionalId);
+      }
       await this.logEvent("commit_requested", {
+        provisionalId: provisionalId || "none",
         partialTranscript: this.partialTranscript,
       });
-      await this.elevenLabs.commit();
+      await commitPromise;
     });
 
     return this.commitQueue;
   }
 
   async stop() {
+    this.stopped = true;
     await this.commitTranscript();
     this.elevenLabs?.close();
+    this.elevenLabs = null;
+    this.bridgeReady = false;
+    this.bridgeConnecting = false;
     this.codex.close();
     await this.writeNote();
     await this.logEvent("session_stopped", {
@@ -283,9 +288,7 @@ export class MeetingSession {
 
     this.partialTranscript = "";
     this.lastProvisionalText = "";
-    if (this.provisionalSegments.length > 0) {
-      this.provisionalSegments.shift();
-    }
+    const resolvedProvisionalId = this.resolveCommittedProvisional(committedText);
     const committedAt = this.timeStamp(new Date());
 
     this.transcriptSegments.push({
@@ -297,21 +300,33 @@ export class MeetingSession {
     await this.logEvent("transcript_committed", {
       text: committedText,
       committedAt,
+      resolvedProvisionalId: resolvedProvisionalId || "none",
       totalCommittedSegments: this.transcriptSegments.length,
     });
-    this.sendEvent({ type: "transcript_committed", text: committedText, committedAt });
+    this.sendEvent({
+      type: "transcript_committed",
+      text: committedText,
+      committedAt,
+      resolvedProvisionalId,
+    });
     this.sendEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
   }
 
   private flushQueuedAudio() {
-    if (!this.elevenLabs) {
+    if (!this.elevenLabs || !this.bridgeReady) {
       return;
     }
 
+    const queuedChunkCount = this.audioQueue.length;
     for (const chunk of this.audioQueue) {
       this.elevenLabs.sendAudioChunk(chunk);
     }
     this.audioQueue.length = 0;
+    if (queuedChunkCount > 0) {
+      void this.logEvent("audio_queue_flushed", {
+        count: queuedChunkCount,
+      });
+    }
   }
 
   private buildQuestionContext() {
@@ -362,29 +377,186 @@ export class MeetingSession {
     );
   }
 
-  private snapshotPartialTranscript() {
-    const provisionalText = this.partialTranscript.trim();
-    if (!provisionalText || provisionalText === this.lastProvisionalText) {
+  private ensureElevenLabsConnected() {
+    if (this.stopped || this.elevenLabs || this.bridgeConnecting) {
       return;
     }
 
+    const previousText = this.reconnectionContext();
+    this.bridgeConnecting = true;
+    this.bridgeConnectionAttempts += 1;
+    void this.logEvent("elevenlabs_connecting", {
+      attempt: this.bridgeConnectionAttempts,
+      bufferedAudioChunks: this.audioQueue.length,
+      previousTextLength: previousText.length,
+    });
+
+    const bridge = new ElevenLabsBridge({
+      sampleRate: this.sampleRate,
+      previousText,
+      onStatus: (message) => {
+        if (this.elevenLabs !== bridge) {
+          return;
+        }
+
+        void this.logEvent("status", { message });
+        this.sendEvent({ type: "status", message });
+      },
+      onReady: () => {
+        if (this.elevenLabs !== bridge) {
+          return;
+        }
+
+        this.bridgeConnecting = false;
+        this.bridgeReady = true;
+        void this.logEvent("elevenlabs_ready", {
+          attempt: this.bridgeConnectionAttempts,
+        });
+        this.flushQueuedAudio();
+      },
+      onPartialTranscript: (text) => {
+        if (this.elevenLabs !== bridge) {
+          return;
+        }
+
+        this.partialTranscript = text;
+        void this.logEvent("transcript_partial", {
+          text,
+          charCount: text.length,
+        });
+        this.sendEvent({ type: "transcript_partial", text });
+      },
+      onCommittedTranscript: (text) => {
+        if (this.elevenLabs !== bridge) {
+          return;
+        }
+
+        void this.handleCommittedTranscript(text);
+      },
+      onClose: ({ code, reason, intentional }) => {
+        if (this.elevenLabs !== bridge) {
+          return;
+        }
+
+        const recoveredChunks = bridge.drainPendingAudioChunks();
+        this.bridgeConnecting = false;
+        this.bridgeReady = false;
+        this.elevenLabs = null;
+        if (recoveredChunks.length > 0) {
+          this.audioQueue.unshift(...recoveredChunks);
+        }
+
+        void this.logEvent("elevenlabs_closed", {
+          code,
+          reason: reason || "no-reason",
+          intentional,
+          recoveredQueuedChunks: recoveredChunks.length,
+        });
+
+        if (intentional || this.stopped) {
+          this.sendEvent({ type: "status", message: "ElevenLabs connection closed." });
+          return;
+        }
+
+        this.sendEvent({
+          type: "status",
+          message: "Transcription connection dropped. Reconnecting...",
+        });
+        this.ensureElevenLabsConnected();
+      },
+    });
+
+    this.elevenLabs = bridge;
+  }
+
+  private reconnectionContext() {
+    const mostRecentText =
+      this.transcriptSegments[this.transcriptSegments.length - 1]?.text ??
+      this.partialTranscript ??
+      "";
+
+    return mostRecentText.slice(-48);
+  }
+
+  private snapshotPartialTranscript() {
+    const provisionalText = this.partialTranscript.trim();
+    if (!provisionalText || provisionalText === this.lastProvisionalText) {
+      return "";
+    }
+
+    const provisionalId = crypto.randomUUID();
     const provisionalAt = this.timeStamp(new Date());
     this.provisionalSegments.push({
+      id: provisionalId,
       text: provisionalText,
       provisionalAt,
     });
     this.lastProvisionalText = provisionalText;
     this.sendEvent({
       type: "transcript_provisional",
+      provisionalId,
       text: provisionalText,
       provisionalAt,
     });
     void this.logEvent("transcript_provisional", {
+      provisionalId,
       text: provisionalText,
       provisionalAt,
       totalProvisionalSegments: this.provisionalSegments.length,
     });
     this.sendEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
+    return provisionalId;
+  }
+
+  private resolveCommittedProvisional(committedText: string) {
+    if (this.provisionalSegments.length === 0) {
+      return "";
+    }
+
+    const queuedProvisionalId = this.pendingCommitProvisionalIds.shift() ?? "";
+    if (queuedProvisionalId) {
+      const queuedIndex = this.provisionalSegments.findIndex(
+        (segment) => segment.id === queuedProvisionalId
+      );
+      if (queuedIndex >= 0) {
+        const resolvedSegment = this.provisionalSegments.splice(queuedIndex, 1)[0];
+        return resolvedSegment.id;
+      }
+    }
+
+    const normalizedCommittedText = this.normalizeTranscriptText(committedText);
+    let matchedIndex = -1;
+
+    for (let index = this.provisionalSegments.length - 1; index >= 0; index -= 1) {
+      const normalizedProvisionalText = this.normalizeTranscriptText(
+        this.provisionalSegments[index].text
+      );
+
+      if (
+        normalizedCommittedText === normalizedProvisionalText ||
+        normalizedCommittedText.startsWith(normalizedProvisionalText) ||
+        normalizedProvisionalText.startsWith(normalizedCommittedText) ||
+        normalizedCommittedText.includes(normalizedProvisionalText)
+      ) {
+        matchedIndex = index;
+        break;
+      }
+    }
+
+    if (matchedIndex === -1) {
+      matchedIndex = 0;
+    }
+
+    const resolvedSegment = this.provisionalSegments.splice(matchedIndex, 1)[0];
+    return resolvedSegment.id;
+  }
+
+  private normalizeTranscriptText(text: string) {
+    return text
+      .trim()
+      .toLocaleLowerCase()
+      .replace(/[.!?,:;।]+$/u, "")
+      .replace(/\s+/gu, " ");
   }
 
   private formatDateTime(date: Date) {

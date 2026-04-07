@@ -55,7 +55,7 @@ async function main() {
   await page.waitForFunction(
     () => {
       const text = document.body.innerText.toLowerCase();
-      return text.includes("we agreed the launch is on friday");
+      return text.includes("friday") && text.includes("ratul");
     },
     undefined,
     { timeout: 60_000 }
@@ -79,10 +79,19 @@ async function main() {
   await page.waitForFunction(
     () => {
       const text = document.body.innerText.toLowerCase();
-      return text.includes("ratul") && text.includes("friday");
+      return text.includes("1 answers") && text.includes("when is the launch and who owns the demo?");
     },
     undefined,
     { timeout: 60_000 }
+  );
+
+  await page.waitForFunction(
+    () => {
+      const text = document.body.innerText.toLowerCase();
+      return text.includes("after the pause");
+    },
+    undefined,
+    { timeout: 90_000 }
   );
 
   await mkdir("output/playwright", { recursive: true });
@@ -94,16 +103,7 @@ async function main() {
   await page.getByRole("button", { name: "Stop" }).click();
   await browser.close();
 
-  const note = await readLatestNote();
-
-  if (
-    !note.toLowerCase().includes("friday") ||
-    !note.toLowerCase().includes("ratul") ||
-    note.includes("- Waiting for the first committed transcript.") ||
-    note.includes("- Transcript has not started yet.")
-  ) {
-    throw new Error("Obsidian note did not contain the expected transcript/Q&A content.");
-  }
+  await waitForExpectedNote();
 
   console.log("E2E validation passed.");
 }
@@ -124,6 +124,32 @@ async function readLatestNote() {
   const notePath = path.join(noteDir, matching[matching.length - 1]);
   console.log(`Validated note: ${notePath}`);
   return await readFile(notePath, "utf8");
+}
+
+async function waitForExpectedNote() {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const note = await readLatestNote();
+    if (hasExpectedContent(note)) {
+      return note;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  throw new Error("Obsidian note did not contain the expected transcript/Q&A content.");
+}
+
+function hasExpectedContent(note: string) {
+  const normalized = note.toLowerCase();
+
+  return (
+    normalized.includes("friday") &&
+    normalized.includes("ratul") &&
+    normalized.includes("after the pause") &&
+    normalized.includes("when is the launch and who owns the demo?") &&
+    !note.includes("- Waiting for the first committed transcript.") &&
+    !note.includes("- Transcript has not started yet.")
+  );
 }
 
 void main();

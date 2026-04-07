@@ -2,9 +2,16 @@ import WebSocket from "ws";
 
 type ElevenLabsBridgeOptions = {
   sampleRate: number;
+  previousText?: string;
   onStatus: (message: string) => void;
+  onReady: () => void;
   onPartialTranscript: (text: string) => void;
   onCommittedTranscript: (text: string) => void;
+  onClose: (details: {
+    code: number;
+    reason: string;
+    intentional: boolean;
+  }) => void;
 };
 
 type SessionStartedMessage = {
@@ -59,20 +66,31 @@ const ELEVENLABS_ENDPOINT = "wss://api.elevenlabs.io/v1/speech-to-text/realtime"
 export class ElevenLabsBridge {
   private readonly socket: WebSocket;
   private readonly sampleRate: number;
+  private previousText: string;
   private readonly onStatus: (message: string) => void;
+  private readonly onReady: () => void;
   private readonly onPartialTranscript: (text: string) => void;
   private readonly onCommittedTranscript: (text: string) => void;
+  private readonly onClose: (details: {
+    code: number;
+    reason: string;
+    intentional: boolean;
+  }) => void;
   private readonly pendingAudioChunks: AudioChunk[] = [];
   private readonly pendingCommitResolvers: Array<() => void> = [];
   private ready = false;
   private hasSentAudio = false;
   private commitInFlight = false;
+  private intentionalClose = false;
 
   constructor(options: ElevenLabsBridgeOptions) {
     this.sampleRate = options.sampleRate;
+    this.previousText = options.previousText?.trim() ?? "";
     this.onStatus = options.onStatus;
+    this.onReady = options.onReady;
     this.onPartialTranscript = options.onPartialTranscript;
     this.onCommittedTranscript = options.onCommittedTranscript;
+    this.onClose = options.onClose;
 
     const query = new URLSearchParams({
       model_id: "scribe_v2_realtime",
@@ -92,7 +110,17 @@ export class ElevenLabsBridge {
     });
 
     this.socket.on("close", () => {
-      this.onStatus("ElevenLabs connection closed.");
+      this.ready = false;
+      this.commitInFlight = false;
+      this.resolvePendingCommits();
+    });
+
+    this.socket.on("close", (code, reasonBuffer) => {
+      this.onClose({
+        code,
+        reason: reasonBuffer.toString("utf8"),
+        intentional: this.intentionalClose,
+      });
     });
 
     this.socket.on("error", (error) => {
@@ -107,18 +135,21 @@ export class ElevenLabsBridge {
     }
 
     this.hasSentAudio = true;
+    const previousText = this.previousText;
+    this.previousText = "";
     this.socket.send(
       JSON.stringify({
         message_type: "input_audio_chunk",
         audio_base_64: chunk.pcmBase64,
         sample_rate: chunk.sampleRate,
+        previous_text: previousText || undefined,
       })
     );
   }
 
   commit() {
     if (!this.ready || !this.hasSentAudio || this.commitInFlight) {
-      return Promise.resolve();
+      return null;
     }
 
     return new Promise<void>((resolve) => {
@@ -136,13 +167,22 @@ export class ElevenLabsBridge {
   }
 
   close() {
+    this.intentionalClose = true;
     this.socket.close();
+  }
+
+  drainPendingAudioChunks() {
+    const drainedChunks = [...this.pendingAudioChunks];
+    this.pendingAudioChunks.length = 0;
+    return drainedChunks;
   }
 
   private handleMessage(message: ElevenLabsMessage) {
     if (isSessionStartedMessage(message)) {
       this.ready = true;
+      this.intentionalClose = false;
       this.onStatus(`ElevenLabs session ${message.session_id.slice(0, 8)} is live.`);
+      this.onReady();
       this.flushQueuedAudio();
       return;
     }
@@ -168,5 +208,11 @@ export class ElevenLabsBridge {
       this.sendAudioChunk(chunk);
     }
     this.pendingAudioChunks.length = 0;
+  }
+
+  private resolvePendingCommits() {
+    while (this.pendingCommitResolvers.length > 0) {
+      this.pendingCommitResolvers.shift()?.();
+    }
   }
 }
