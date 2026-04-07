@@ -22,11 +22,19 @@ type BufferedChunk = {
   sampleRate: number;
 };
 
-const GATE_OPEN_THRESHOLD = 0.028;
-const GATE_CLOSE_THRESHOLD = 0.018;
-const GATE_PREBUFFER_CHUNKS = 4;
-const GATE_HANGOVER_CHUNKS = 12;
-const GATE_OPEN_CONSECUTIVE_CHUNKS = 3;
+type AudioGateMessage =
+  | {
+      type: "level";
+      level: number;
+    }
+  | {
+      type: "chunk";
+      pcmBuffer: ArrayBuffer;
+      sampleRate: number;
+    }
+  | {
+      type: "speech_pause";
+    };
 
 export async function startAudioCapture(
   options: StartAudioCaptureOptions
@@ -62,18 +70,20 @@ export async function startAudioCapture(
     sampleRate: 48_000,
   });
   void audioContext.resume();
+  await audioContext.audioWorklet.addModule("/audio-gate-processor.js");
 
   const mixer = audioContext.createGain();
-  const processor = audioContext.createScriptProcessor(4096, 1, 1);
-  const silence = audioContext.createGain();
+  const processor = new AudioWorkletNode(audioContext, "audio-gate-processor", {
+    channelCount: 1,
+    channelCountMode: "explicit",
+    channelInterpretation: "speakers",
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [1],
+  });
   const highPass = audioContext.createBiquadFilter();
   const lowPass = audioContext.createBiquadFilter();
   const compressor = audioContext.createDynamicsCompressor();
-  silence.gain.value = 0;
-  const prebuffer: BufferedChunk[] = [];
-  let gateOpen = false;
-  let gateHangover = 0;
-  let gateOpenCandidateChunks = 0;
 
   highPass.type = "highpass";
   highPass.frequency.value = 140;
@@ -103,74 +113,25 @@ export async function startAudioCapture(
   }
 
   mixer.connect(processor);
-  processor.connect(silence);
-  silence.connect(audioContext.destination);
+  processor.port.onmessage = (event: MessageEvent<AudioGateMessage>) => {
+    const message = event.data;
 
-  processor.onaudioprocess = (event) => {
-    const input = event.inputBuffer;
-    const channelCount = input.numberOfChannels;
-    const sampleCount = input.length;
-    const mono = new Float32Array(sampleCount);
-    let energy = 0;
-
-    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
-      let sample = 0;
-      for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
-        sample += input.getChannelData(channelIndex)[sampleIndex];
-      }
-      const monoSample = sample / channelCount;
-      mono[sampleIndex] = monoSample;
-      energy += monoSample * monoSample;
-    }
-
-    const rms = Math.sqrt(energy / sampleCount);
-    const chunk = {
-      pcmBase64: float32ToBase64Pcm16(mono),
-      sampleRate: audioContext.sampleRate,
-    };
-
-    options.onLevel?.(Math.min(1, rms * 8));
-
-    if (!gateOpen) {
-      prebuffer.push(chunk);
-      if (prebuffer.length > GATE_PREBUFFER_CHUNKS) {
-        prebuffer.shift();
-      }
-
-      if (rms >= GATE_OPEN_THRESHOLD) {
-        gateOpenCandidateChunks += 1;
-      } else {
-        gateOpenCandidateChunks = 0;
-      }
-
-      if (gateOpenCandidateChunks >= GATE_OPEN_CONSECUTIVE_CHUNKS) {
-        gateOpen = true;
-        gateHangover = GATE_HANGOVER_CHUNKS;
-        gateOpenCandidateChunks = 0;
-
-        for (const bufferedChunk of prebuffer) {
-          options.onChunk(bufferedChunk.pcmBase64, bufferedChunk.sampleRate);
-        }
-
-        prebuffer.length = 0;
-      }
-
+    if (message.type === "level") {
+      options.onLevel?.(message.level);
       return;
     }
 
-    options.onChunk(chunk.pcmBase64, chunk.sampleRate);
-
-    if (rms >= GATE_CLOSE_THRESHOLD) {
-      gateHangover = GATE_HANGOVER_CHUNKS;
+    if (message.type === "chunk") {
+      const pcm = new Int16Array(message.pcmBuffer);
+      const chunk: BufferedChunk = {
+        pcmBase64: int16ToBase64Pcm16(pcm),
+        sampleRate: message.sampleRate,
+      };
+      options.onChunk(chunk.pcmBase64, chunk.sampleRate);
       return;
     }
 
-    gateHangover -= 1;
-    if (gateHangover <= 0) {
-      gateOpen = false;
-      prebuffer.length = 0;
-      options.onSpeechPause?.();
-    }
+    options.onSpeechPause?.();
   };
 
   return {
@@ -179,7 +140,6 @@ export async function startAudioCapture(
     stop() {
       processor.disconnect();
       mixer.disconnect();
-      silence.disconnect();
       compressor.disconnect();
       lowPass.disconnect();
       highPass.disconnect();
@@ -221,16 +181,8 @@ export async function listAudioInputDevices(): Promise<AudioInputDevice[]> {
     });
 }
 
-function float32ToBase64Pcm16(samples: Float32Array) {
-  const bytes = new Uint8Array(samples.length * 2);
-  const view = new DataView(bytes.buffer);
-
-  for (let index = 0; index < samples.length; index += 1) {
-    const clipped = Math.max(-1, Math.min(1, samples[index]));
-    const value = clipped < 0 ? clipped * 0x8000 : clipped * 0x7fff;
-    view.setInt16(index * 2, value, true);
-  }
-
+function int16ToBase64Pcm16(samples: Int16Array) {
+  const bytes = new Uint8Array(samples.buffer.slice(0));
   let binary = "";
   for (const byte of bytes) {
     binary += String.fromCharCode(byte);

@@ -34,6 +34,7 @@ export function MeetingBuddyApp() {
   const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
   const [noteMarkdown, setNoteMarkdown] = useState("");
   const [notePathRelative, setNotePathRelative] = useState("");
+  const [logPathRelative, setLogPathRelative] = useState("");
   const [statusMessage, setStatusMessage] = useState("Ready when you are.");
   const [modelName, setModelName] = useState("");
   const [currentAnswer, setCurrentAnswer] = useState("");
@@ -42,6 +43,8 @@ export function MeetingBuddyApp() {
   const socketRef = useRef<WebSocket | null>(null);
   const captureRef = useRef<AudioCaptureHandle | null>(null);
   const pendingQuestionRef = useRef("");
+  const answerBufferRef = useRef("");
+  const answerFlushTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (window.location.hostname === "0.0.0.0") {
@@ -63,6 +66,9 @@ export function MeetingBuddyApp() {
 
     return () => {
       mediaDevices?.removeEventListener("devicechange", refreshMicrophones);
+      if (answerFlushTimerRef.current !== null) {
+        window.clearTimeout(answerFlushTimerRef.current);
+      }
       captureRef.current?.stop();
       socketRef.current?.close();
     };
@@ -81,7 +87,13 @@ export function MeetingBuddyApp() {
     setCurrentAnswer("");
     setNoteMarkdown("");
     setNotePathRelative("");
+    setLogPathRelative("");
     setStatusMessage("Requesting microphone access...");
+    answerBufferRef.current = "";
+    if (answerFlushTimerRef.current !== null) {
+      window.clearTimeout(answerFlushTimerRef.current);
+      answerFlushTimerRef.current = null;
+    }
 
     void startAudioCapture({
       includeTabAudio,
@@ -193,6 +205,7 @@ export function MeetingBuddyApp() {
     if (event.type === "session_ready") {
       setConnectionState("live");
       setNotePathRelative(event.notePathRelative);
+      setLogPathRelative(event.logPathRelative);
       setModelName(event.model);
       setStatusMessage(`Listening live on ${selectedMicLabel}.`);
       return;
@@ -226,11 +239,22 @@ export function MeetingBuddyApp() {
     }
 
     if (event.type === "answer_delta") {
-      setCurrentAnswer((current) => current + event.delta);
+      answerBufferRef.current += event.delta;
+      if (answerFlushTimerRef.current === null) {
+        answerFlushTimerRef.current = window.setTimeout(() => {
+          setCurrentAnswer(answerBufferRef.current);
+          answerFlushTimerRef.current = null;
+        }, 120);
+      }
       return;
     }
 
     if (event.type === "answer_done") {
+      if (answerFlushTimerRef.current !== null) {
+        window.clearTimeout(answerFlushTimerRef.current);
+        answerFlushTimerRef.current = null;
+      }
+      answerBufferRef.current = "";
       setQuestionAnswers((current) => [
         {
           question: pendingQuestionRef.current,
@@ -290,6 +314,9 @@ export function MeetingBuddyApp() {
                 ) : null}
                 {notePathRelative ? (
                   <span className="rounded-full border border-[var(--line)] px-3 py-1">{notePathRelative}</span>
+                ) : null}
+                {logPathRelative ? (
+                  <span className="rounded-full border border-[var(--line)] px-3 py-1">{logPathRelative}</span>
                 ) : null}
               </div>
             </div>

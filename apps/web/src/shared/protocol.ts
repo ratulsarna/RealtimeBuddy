@@ -27,6 +27,8 @@ export type ServerEvent =
       sessionId: string;
       notePath: string;
       notePathRelative: string;
+      logPath: string;
+      logPathRelative: string;
       model: string;
     }
   | {

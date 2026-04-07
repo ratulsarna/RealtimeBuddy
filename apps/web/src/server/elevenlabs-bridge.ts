@@ -66,6 +66,7 @@ export class ElevenLabsBridge {
   private readonly pendingCommitResolvers: Array<() => void> = [];
   private ready = false;
   private hasSentAudio = false;
+  private commitInFlight = false;
 
   constructor(options: ElevenLabsBridgeOptions) {
     this.sampleRate = options.sampleRate;
@@ -100,7 +101,7 @@ export class ElevenLabsBridge {
   }
 
   sendAudioChunk(chunk: AudioChunk) {
-    if (!this.ready) {
+    if (!this.ready || this.commitInFlight) {
       this.pendingAudioChunks.push(chunk);
       return;
     }
@@ -116,11 +117,12 @@ export class ElevenLabsBridge {
   }
 
   commit() {
-    if (!this.ready || !this.hasSentAudio) {
+    if (!this.ready || !this.hasSentAudio || this.commitInFlight) {
       return Promise.resolve();
     }
 
     return new Promise<void>((resolve) => {
+      this.commitInFlight = true;
       this.pendingCommitResolvers.push(resolve);
       this.socket.send(
         JSON.stringify({
@@ -152,7 +154,9 @@ export class ElevenLabsBridge {
 
     if (isCommittedTranscriptMessage(message)) {
       this.onCommittedTranscript(message.text);
+      this.commitInFlight = false;
       this.pendingCommitResolvers.shift()?.();
+      this.flushQueuedAudio();
       return;
     }
 

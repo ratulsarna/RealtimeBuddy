@@ -1,5 +1,6 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { buildMeetingNote } from "./note-builder";
 import { ElevenLabsBridge } from "./elevenlabs-bridge";
@@ -16,6 +17,8 @@ type SendEvent = (event:
       sessionId: string;
       notePath: string;
       notePathRelative: string;
+      logPath: string;
+      logPathRelative: string;
       model: string;
     }
   | {
@@ -70,6 +73,8 @@ type QuestionAnswer = {
 };
 
 const DEFAULT_VAULT_PATH = "/Users/ratulsarna/Vault/ObsidianVault";
+const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
+const WEB_APP_DIR = path.resolve(SERVER_DIR, "../..");
 
 export class MeetingSession {
   readonly id = crypto.randomUUID();
@@ -83,6 +88,8 @@ export class MeetingSession {
   private readonly vaultPath = process.env.OBSIDIAN_VAULT_PATH ?? DEFAULT_VAULT_PATH;
   private readonly notePath: string;
   private readonly notePathRelative: string;
+  private readonly logPath: string;
+  private readonly logPathRelative: string;
   private readonly codex = new CodexAppServer();
   private readonly audioQueue: AudioChunk[] = [];
 
@@ -90,6 +97,7 @@ export class MeetingSession {
   private partialTranscript = "";
   private askQueue = Promise.resolve();
   private commitQueue = Promise.resolve();
+  private audioChunkCount = 0;
 
   constructor(options: MeetingSessionOptions) {
     this.sampleRate = options.sampleRate;
@@ -101,19 +109,36 @@ export class MeetingSession {
     const noteFileName = `${this.title} - ${this.timeStamp(this.startedAt)}.md`;
     this.notePath = path.join(noteFolder, noteFileName);
     this.notePathRelative = path.relative(this.vaultPath, this.notePath);
+
+    const logFolder = path.join(WEB_APP_DIR, "output", "session-logs", this.dateStamp(this.startedAt));
+    const logFileName = `${this.title} - ${this.timeStamp(this.startedAt)}.jsonl`;
+    this.logPath = path.join(logFolder, logFileName);
+    this.logPathRelative = path.relative(WEB_APP_DIR, this.logPath);
   }
 
   async start() {
     await mkdir(path.dirname(this.notePath), { recursive: true });
+    await mkdir(path.dirname(this.logPath), { recursive: true });
     await this.writeNote();
+    await this.logEvent("session_started", {
+      notePath: this.notePathRelative,
+      logPath: this.logPathRelative,
+      includeTabAudio: this.includeTabAudio,
+      sampleRate: this.sampleRate,
+    });
 
     this.elevenLabs = new ElevenLabsBridge({
       sampleRate: this.sampleRate,
       onStatus: (message) => {
+        void this.logEvent("status", { message });
         this.sendEvent({ type: "status", message });
       },
       onPartialTranscript: (text) => {
         this.partialTranscript = text;
+        void this.logEvent("transcript_partial", {
+          text,
+          charCount: text.length,
+        });
         this.sendEvent({ type: "transcript_partial", text });
       },
       onCommittedTranscript: (text) => {
@@ -128,9 +153,14 @@ export class MeetingSession {
       sessionId: this.id,
       notePath: this.notePath,
       notePathRelative: this.notePathRelative,
+      logPath: this.logPath,
+      logPathRelative: this.logPathRelative,
       model: await this.codex.getSelectedModel(),
     });
     this.sendEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
+    await this.logEvent("session_ready", {
+      model: await this.codex.getSelectedModel(),
+    });
 
     this.flushQueuedAudio();
   }
@@ -141,19 +171,49 @@ export class MeetingSession {
       return;
     }
 
+    this.audioChunkCount += 1;
+    if (this.audioChunkCount % 25 === 0) {
+      void this.logEvent("audio_chunks_received", {
+        count: this.audioChunkCount,
+        sampleRate: chunk.sampleRate,
+      });
+    }
+
     this.elevenLabs.sendAudioChunk(chunk);
   }
 
   ask(question: string) {
     this.askQueue = this.askQueue.then(async () => {
+      await this.commitTranscript();
       const askedAt = this.timeStamp(new Date());
       let answer = "";
+      let pendingAnswerDelta = "";
+      let answerDeltaTimer: NodeJS.Timeout | null = null;
+      await this.logEvent("ask_started", {
+        question,
+        committedTranscriptSegments: this.transcriptSegments.length,
+        hadPartialTranscript: Boolean(this.partialTranscript.trim()),
+      });
 
       const context = this.buildQuestionContext();
       const text = await this.codex.askQuestion(question, context, (delta) => {
         answer += delta;
-        this.sendEvent({ type: "answer_delta", delta });
+        pendingAnswerDelta += delta;
+        if (answerDeltaTimer === null) {
+          answerDeltaTimer = setTimeout(() => {
+            this.sendEvent({ type: "answer_delta", delta: pendingAnswerDelta });
+            pendingAnswerDelta = "";
+            answerDeltaTimer = null;
+          }, 120);
+        }
       });
+
+      if (answerDeltaTimer !== null) {
+        clearTimeout(answerDeltaTimer);
+      }
+      if (pendingAnswerDelta) {
+        this.sendEvent({ type: "answer_delta", delta: pendingAnswerDelta });
+      }
 
       answer = text || answer;
       this.questionAnswers.unshift({
@@ -163,6 +223,10 @@ export class MeetingSession {
       });
 
       await this.writeNote();
+      await this.logEvent("ask_completed", {
+        question,
+        answer,
+      });
       this.sendEvent({ type: "answer_done", text: answer });
       this.sendEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
     });
@@ -176,6 +240,9 @@ export class MeetingSession {
         return;
       }
 
+      await this.logEvent("commit_requested", {
+        partialTranscript: this.partialTranscript,
+      });
       await this.elevenLabs.commit();
     });
 
@@ -187,6 +254,11 @@ export class MeetingSession {
     this.elevenLabs?.close();
     this.codex.close();
     await this.writeNote();
+    await this.logEvent("session_stopped", {
+      transcriptSegments: this.transcriptSegments.length,
+      questionsAnswered: this.questionAnswers.length,
+      audioChunksReceived: this.audioChunkCount,
+    });
     this.sendEvent({ type: "session_stopped" });
   }
 
@@ -205,6 +277,11 @@ export class MeetingSession {
     });
 
     await this.writeNote();
+    await this.logEvent("transcript_committed", {
+      text: committedText,
+      committedAt,
+      totalCommittedSegments: this.transcriptSegments.length,
+    });
     this.sendEvent({ type: "transcript_committed", text: committedText, committedAt });
     this.sendEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
   }
@@ -247,6 +324,19 @@ export class MeetingSession {
 
   private async writeNote() {
     await writeFile(this.notePath, this.currentMarkdown(), "utf8");
+  }
+
+  private async logEvent(type: string, payload: Record<string, string | number | boolean>) {
+    await appendFile(
+      this.logPath,
+      `${JSON.stringify({
+        at: new Date().toISOString(),
+        sessionId: this.id,
+        type,
+        ...payload,
+      })}\n`,
+      "utf8"
+    );
   }
 
   private formatDateTime(date: Date) {
