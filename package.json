@@ -2,12 +2,19 @@
   "name": "realtimebuddy",
   "private": true,
   "version": "0.1.0",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
   "scripts": {
-    "dev": "pnpm --filter @realtimebuddy/web dev",
-    "build": "pnpm --filter @realtimebuddy/web build",
-    "start": "pnpm --filter @realtimebuddy/web start",
-    "lint": "pnpm --filter @realtimebuddy/web lint",
-    "test": "pnpm --filter @realtimebuddy/web test",
+    "dev": "concurrently -k -n backend,web \"pnpm dev:backend\" \"pnpm dev:web\"",
+    "dev:backend": "pnpm --filter @realtimebuddy/backend dev",
+    "dev:web": "pnpm --filter @realtimebuddy/web dev",
+    "build": "pnpm -r --if-present build",
+    "start": "concurrently -k -n backend,web \"pnpm start:backend\" \"pnpm start:web\"",
+    "start:backend": "pnpm --filter @realtimebuddy/backend start",
+    "start:web": "pnpm --filter @realtimebuddy/web start",
+    "lint": "pnpm -r --if-present lint",
+    "test": "pnpm -r --if-present test",
     "e2e:validate": "pnpm --filter @realtimebuddy/web e2e:validate"
   }
 }

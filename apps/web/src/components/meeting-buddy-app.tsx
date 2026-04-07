@@ -8,12 +8,13 @@ import {
   type AudioCaptureHandle,
   type AudioInputDevice,
 } from "@/lib/audio-capture";
+import { resolveBrowserBackendConfig } from "@/lib/backend-config";
 import {
   getSessionLanguageLabel,
   sessionLanguageOptions,
   type SessionLanguagePreference,
-} from "@/shared/language-preferences";
-import { type ServerEvent } from "@/shared/protocol";
+} from "@realtimebuddy/shared/language-preferences";
+import { type ServerEvent } from "@realtimebuddy/shared/protocol";
 
 type PendingTranscriptEntry = {
   id: string;
@@ -45,7 +46,13 @@ type AudioDiagnostics = {
 type CaptureIntent = "idle" | "starting" | "resuming";
 type ConnectionState = "idle" | "starting" | "live" | "pausing" | "paused" | "resuming" | "stopping";
 
-export function MeetingBuddyApp() {
+type MeetingBuddyAppProps = {
+  backendBaseUrl?: string;
+};
+
+export function MeetingBuddyApp({
+  backendBaseUrl = "",
+}: MeetingBuddyAppProps) {
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [includeTabAudio, setIncludeTabAudio] = useState(false);
   const [languagePreference, setLanguagePreference] = useState<SessionLanguagePreference>("auto");
@@ -111,11 +118,12 @@ export function MeetingBuddyApp() {
       socketRef.current?.close();
       pendingSocketMessagesRef.current = [];
     };
-  }, []);
+  }, [backendBaseUrl]);
 
   const selectedMicLabel =
     microphones.find((device) => device.deviceId === selectedMicId)?.label ||
     "Browser default microphone";
+  const backendTargetLabel = backendBaseUrl.replace(/\/$/, "") || "current host:3001";
 
   const queueOrSendSocketMessage = (payload: string) => {
     const socket = socketRef.current;
@@ -255,47 +263,79 @@ export function MeetingBuddyApp() {
     const requestId = captureRequestIdRef.current + 1;
     captureRequestIdRef.current = requestId;
 
-    startCapture((capture) => {
-      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-      const socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
-      socketRef.current = socket;
+    startCapture(async (capture) => {
+      try {
+        const backendAccessToken = await requestBackendAccessToken();
+        const { webSocketUrl } = resolveBrowserBackendConfig({
+          backendAccessToken,
+          backendBaseUrl,
+          pageUrl: window.location.href,
+        });
+        const socket = new WebSocket(webSocketUrl);
+        socketRef.current = socket;
 
-      socket.onopen = () => {
-        socket.send(
-          JSON.stringify({
-            type: "start_session",
-            sampleRate: capture.sampleRate,
-            title,
-            includeTabAudio: capture.tabAudioEnabled,
-            languagePreference,
-          })
-        );
-        flushPendingSocketMessages();
-      };
+        socket.onopen = () => {
+          socket.send(
+            JSON.stringify({
+              type: "start_session",
+              sampleRate: capture.sampleRate,
+              title,
+              includeTabAudio: capture.tabAudioEnabled,
+              languagePreference,
+            })
+          );
+          flushPendingSocketMessages();
+        };
 
-      socket.onmessage = (event) => {
-        const message = JSON.parse(event.data) as ServerEvent;
-        handleServerEvent(message);
-      };
+        socket.onmessage = (event) => {
+          const message = JSON.parse(event.data) as ServerEvent;
+          handleServerEvent(message);
+        };
 
-      socket.onclose = () => {
-        setConnectionState("idle");
-        setAudioLevel(0);
-        setIsAsking(false);
-        setStatusMessage((current) => (current === "Session stopped." ? current : "Session closed."));
+        socket.onclose = () => {
+          setConnectionState("idle");
+          setAudioLevel(0);
+          setIsAsking(false);
+          setStatusMessage((current) => (current === "Session stopped." ? current : "Session closed."));
+          captureIntentRef.current = "idle";
+          captureForwardingEnabledRef.current = true;
+          captureRequestIdRef.current += 1;
+          captureRef.current?.stop();
+          captureRef.current = null;
+          socketRef.current = null;
+          pendingSocketMessagesRef.current = [];
+        };
+      } catch (error) {
+        capture.stop();
+        captureRef.current = null;
         captureIntentRef.current = "idle";
         captureForwardingEnabledRef.current = true;
         captureRequestIdRef.current += 1;
-        captureRef.current?.stop();
-        captureRef.current = null;
-        socketRef.current = null;
-        pendingSocketMessagesRef.current = [];
-      };
+        setConnectionState("idle");
+        setAudioLevel(0);
+        setStatusMessage(String(error));
+      }
     }, "idle", (capture) =>
       capture.tabAudioEnabled
         ? `${selectedMicLabel} is live with tab audio.`
         : `${selectedMicLabel} is live.`
     , requestId, "starting");
+  };
+
+  const requestBackendAccessToken = async () => {
+    const response = await fetch("/api/backend-auth", {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error("Could not authorize the backend connection.");
+    }
+
+    const payload = (await response.json()) as { token?: string };
+    if (!payload.token) {
+      throw new Error("Backend auth route returned no token.");
+    }
+
+    return payload.token;
   };
 
   const pauseSession = () => {
@@ -557,6 +597,11 @@ export function MeetingBuddyApp() {
                 </span>
                 {modelName ? (
                   <span className="rounded-full border border-[var(--line)] px-3 py-1">{modelName}</span>
+                ) : null}
+                {backendTargetLabel ? (
+                  <span className="rounded-full border border-[var(--line)] px-3 py-1">
+                    backend {backendTargetLabel}
+                  </span>
                 ) : null}
                 {notePathRelative ? (
                   <span className="rounded-full border border-[var(--line)] px-3 py-1">{notePathRelative}</span>

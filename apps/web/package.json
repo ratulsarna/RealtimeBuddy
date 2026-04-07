@@ -3,25 +3,24 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "tsx watch server.ts",
+    "dev": "next dev --hostname 0.0.0.0",
     "build": "next build",
-    "start": "node --import tsx server.ts",
+    "start": "next start --hostname 0.0.0.0",
     "lint": "eslint",
-    "test": "node --import tsx --test src/**/*.test.ts",
+    "test": "node --import tsx --test $(find src -name '*.test.ts' -print)",
     "e2e:validate": "tsx scripts/validate-e2e.ts"
   },
   "dependencies": {
+    "@realtimebuddy/shared": "workspace:*",
     "next": "16.2.2",
     "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "ws": "^8.20.0"
+    "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@types/ws": "^8.18.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.2",
     "playwright": "^1.59.1",

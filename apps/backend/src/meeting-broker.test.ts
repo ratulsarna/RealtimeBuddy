@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 
-import type { SessionLanguagePreference } from "../shared/language-preferences";
+import type { SessionLanguagePreference } from "@realtimebuddy/shared/language-preferences";
+
 import { MeetingBroker } from "./meeting-broker";
 
 type MockSession = {
@@ -80,6 +81,14 @@ function createMockSession(): MockSession {
 
 function flushAsyncWork() {
   return new Promise((resolve) => setImmediate(resolve));
+}
+
+function requireCallback(callback: (() => void) | null, label: string) {
+  if (!callback) {
+    throw new Error(`${label} was not set`);
+  }
+
+  return callback;
 }
 
 test("MeetingBroker routes pause and resume to the active session", async () => {
@@ -220,9 +229,8 @@ test("MeetingBroker serializes pause and resume on the same socket", async () =>
   await flushAsyncWork();
 
   assert.deepEqual(callOrder, ["start", "pause:start"]);
-  assert.ok(releasePause);
-
-  releasePause?.();
+  const releasePauseFn = requireCallback(releasePause, "releasePause");
+  releasePauseFn();
   await flushAsyncWork();
   await flushAsyncWork();
 
@@ -290,7 +298,8 @@ test("MeetingBroker stops immediately when the socket closes during in-flight wo
   assert.equal(stopCalls, 1);
   assert.deepEqual(callOrder, ["start", "ask:start", "stop"]);
 
-  releaseAsk?.();
+  const releaseAskAfterClose = requireCallback(releaseAsk, "releaseAskAfterClose");
+  releaseAskAfterClose();
   await flushAsyncWork();
 });
 
@@ -361,7 +370,8 @@ test("MeetingBroker keeps live audio flowing while an ask is in flight", async (
 
   assert.deepEqual(callOrder, ["start", "ask:start", "audio"]);
 
-  releaseAsk?.();
+  const releaseAskWhileLive = requireCallback(releaseAsk, "releaseAskWhileLive");
+  releaseAskWhileLive();
   await flushAsyncWork();
   assert.deepEqual(callOrder, ["start", "ask:start", "audio", "ask:end"]);
 });

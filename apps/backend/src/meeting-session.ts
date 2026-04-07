@@ -2,13 +2,11 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  resolveRealtimeLanguageCode,
-  type SessionLanguagePreference,
-} from "../shared/language-preferences";
-import { buildMeetingNote } from "./note-builder";
-import { ElevenLabsBridge } from "./elevenlabs-bridge";
+import { resolveRealtimeLanguageCode, type SessionLanguagePreference } from "@realtimebuddy/shared/language-preferences";
+
 import { CodexAppServer } from "./codex-app-server";
+import { ElevenLabsBridge } from "./elevenlabs-bridge";
+import { buildMeetingNote } from "./note-builder";
 
 type AudioChunk = {
   pcmBase64: string;
@@ -102,7 +100,7 @@ type QuestionAnswer = {
 
 const DEFAULT_VAULT_PATH = "/Users/ratulsarna/Vault/ObsidianVault";
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
-const WEB_APP_DIR = path.resolve(SERVER_DIR, "../..");
+const BACKEND_APP_DIR = path.resolve(SERVER_DIR, "..");
 const MAX_BUFFERED_AUDIO_CHUNKS = 240;
 
 export class MeetingSession {
@@ -159,10 +157,10 @@ export class MeetingSession {
     this.notePath = path.join(noteFolder, noteFileName);
     this.notePathRelative = path.relative(this.vaultPath, this.notePath);
 
-    const logFolder = path.join(WEB_APP_DIR, "output", "session-logs", this.dateStamp(this.startedAt));
+    const logFolder = path.join(BACKEND_APP_DIR, "output", "session-logs", this.dateStamp(this.startedAt));
     const logFileName = `${safeFileTitle} - ${this.fileStamp(this.startedAt)}.jsonl`;
     this.logPath = path.join(logFolder, logFileName);
-    this.logPathRelative = path.relative(WEB_APP_DIR, this.logPath);
+    this.logPathRelative = path.relative(BACKEND_APP_DIR, this.logPath);
   }
 
   async start() {
@@ -358,9 +356,6 @@ export class MeetingSession {
         return;
       }
 
-      // A pause/stop can land before ElevenLabs has emitted a partial transcript.
-      // Commit anyway so already-sent audio is finalized, but only snapshot a
-      // provisional segment when we have actual partial text to reconcile.
       const provisionalId = this.partialTranscript.trim() ? this.snapshotPartialTranscript() : "";
       if (provisionalId) {
         this.pendingCommitProvisionalIds.push(provisionalId);
@@ -525,11 +520,7 @@ export class MeetingSession {
   }
 
   private async ensureCodexReady() {
-    if (this.codexUnavailableMessage) {
-      return;
-    }
-
-    if (this.codexModel) {
+    if (this.codexUnavailableMessage || this.codexModel) {
       return;
     }
 
@@ -759,102 +750,59 @@ export class MeetingSession {
       provisionalAt,
       totalProvisionalSegments: this.provisionalSegments.length,
     });
+    void this.writeNote();
+    void this.logEvent("notes_updated", {
+      committedTranscriptSegments: this.transcriptSegments.length,
+      provisionalSegments: this.provisionalSegments.length,
+      questionsAnswered: this.questionAnswers.length,
+    });
     this.sendEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
+
     return provisionalId;
   }
 
   private resolveCommittedProvisional(committedText: string) {
-    if (this.provisionalSegments.length === 0) {
+    const pendingProvisionalId = this.pendingCommitProvisionalIds.shift() ?? "";
+    if (!pendingProvisionalId) {
       return "";
     }
 
-    const queuedProvisionalId = this.pendingCommitProvisionalIds.shift() ?? "";
-    if (queuedProvisionalId) {
-      const queuedIndex = this.provisionalSegments.findIndex(
-        (segment) => segment.id === queuedProvisionalId
-      );
-      if (queuedIndex >= 0) {
-        const resolvedSegment = this.provisionalSegments.splice(queuedIndex, 1)[0];
-        return resolvedSegment.id;
-      }
-    }
-
-    const normalizedCommittedText = this.normalizeTranscriptText(committedText);
-    let matchedIndex = -1;
-
-    for (let index = this.provisionalSegments.length - 1; index >= 0; index -= 1) {
-      const normalizedProvisionalText = this.normalizeTranscriptText(
-        this.provisionalSegments[index].text
-      );
-
-      if (
-        normalizedCommittedText === normalizedProvisionalText ||
-        normalizedCommittedText.startsWith(normalizedProvisionalText) ||
-        normalizedProvisionalText.startsWith(normalizedCommittedText) ||
-        normalizedCommittedText.includes(normalizedProvisionalText)
-      ) {
-        matchedIndex = index;
-        break;
-      }
-    }
+    const matchedIndex = this.provisionalSegments.findIndex(
+      (segment) => segment.id === pendingProvisionalId
+    );
 
     if (matchedIndex === -1) {
-      matchedIndex = 0;
+      return "";
     }
 
-    const resolvedSegment = this.provisionalSegments.splice(matchedIndex, 1)[0];
-    return resolvedSegment.id;
-  }
+    const [resolved] = this.provisionalSegments.splice(matchedIndex, 1);
+    if (resolved.text === committedText) {
+      return resolved.id;
+    }
 
-  private normalizeTranscriptText(text: string) {
-    return text
-      .trim()
-      .toLocaleLowerCase()
-      .replace(/[.!?,:;।]+$/u, "")
-      .replace(/\s+/gu, " ");
-  }
-
-  private formatDateTime(date: Date) {
-    return new Intl.DateTimeFormat("en-IN", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(date);
+    return "";
   }
 
   private dateStamp(date: Date) {
-    const year = `${date.getFullYear()}`;
-    const month = `${date.getMonth() + 1}`.padStart(2, "0");
-    const day = `${date.getDate()}`.padStart(2, "0");
-    return `${year}-${month}-${day}`;
+    return date.toISOString().slice(0, 10);
   }
 
   private timeStamp(date: Date) {
-    const hours = `${date.getHours()}`.padStart(2, "0");
-    const minutes = `${date.getMinutes()}`.padStart(2, "0");
-    return `${hours}-${minutes}`;
+    return date.toISOString().slice(11, 19);
   }
 
   private fileStamp(date: Date) {
-    const hours = `${date.getHours()}`.padStart(2, "0");
-    const minutes = `${date.getMinutes()}`.padStart(2, "0");
-    const seconds = `${date.getSeconds()}`.padStart(2, "0");
-    const milliseconds = `${date.getMilliseconds()}`.padStart(3, "0");
-    return `${hours}-${minutes}-${seconds}-${milliseconds}`;
+    return this.timeStamp(date).replaceAll(":", "-");
+  }
+
+  private formatDateTime(date: Date) {
+    return date.toLocaleString("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
   }
 
   private sanitizeTitleForFileName(title: string) {
-    const sanitized = title
-      .normalize("NFKC")
-      .replace(/[<>:"/\\|?*\u0000-\u001F]+/gu, " ")
-      .replace(/\.\.+/gu, " ")
-      .replace(/\s+/gu, " ")
-      .trim()
-      .replace(/^[. ]+|[. ]+$/gu, "");
-
-    if (!sanitized || sanitized === "." || sanitized === "..") {
-      return "Meeting Buddy";
-    }
-
-    return sanitized;
+    return title.replace(/[<>:"/\\|?*\x00-\x1F]/g, "").trim() || "Meeting Buddy";
   }
 }

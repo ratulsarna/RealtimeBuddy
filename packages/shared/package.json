@@ -1,0 +1,22 @@
+{
+  "name": "@realtimebuddy/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./backend-auth": "./src/backend-auth.ts",
+    "./backend-connection": "./src/backend-connection.ts",
+    "./language-preferences": "./src/language-preferences.ts",
+    "./protocol": "./src/protocol.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test $(find src -name '*.test.ts' -print)"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  }
+}

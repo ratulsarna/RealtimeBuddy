@@ -7,7 +7,9 @@ const APP_URL = process.env.APP_URL ?? "http://localhost:3000";
 const FAKE_AUDIO_PATH = process.env.FAKE_AUDIO_PATH ?? "/tmp/realtimebuddy-e2e.wav";
 const VAULT_PATH =
   process.env.OBSIDIAN_VAULT_PATH ?? "/Users/ratulsarna/Vault/ObsidianVault";
-const WEB_OUTPUT_PATH = path.join(process.cwd(), "output", "session-logs");
+const BACKEND_OUTPUT_PATH =
+  process.env.BACKEND_OUTPUT_PATH ??
+  path.resolve(process.cwd(), "..", "backend", "output", "session-logs");
 const title = `E2E Validation ${new Date().toISOString().slice(11, 19).replaceAll(":", "-")}`;
 
 async function main() {
@@ -174,7 +176,7 @@ async function waitForExpectedNote() {
 
 async function readLatestLog() {
   const today = new Date().toISOString().slice(0, 10);
-  const logDir = path.join(WEB_OUTPUT_PATH, today);
+  const logDir = path.join(BACKEND_OUTPUT_PATH, today);
   const entries = await readdir(logDir, { withFileTypes: true });
   const matching = entries
     .filter((entry) => entry.isFile() && entry.name.startsWith(title))

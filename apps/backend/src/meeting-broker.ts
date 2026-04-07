@@ -1,11 +1,6 @@
+import { parseClientEvent, serializeServerEvent, type ClientEvent, type ServerEvent } from "@realtimebuddy/shared/protocol";
 import type WebSocket from "ws";
 
-import {
-  parseClientEvent,
-  serializeServerEvent,
-  type ClientEvent,
-  type ServerEvent,
-} from "../shared/protocol";
 import { MeetingSession } from "./meeting-session";
 
 type MeetingSessionLike = Pick<
@@ -150,7 +145,6 @@ export class MeetingBroker {
       const session = state.session;
       state.session = null;
       await session.stop();
-      return;
     }
   }
 
