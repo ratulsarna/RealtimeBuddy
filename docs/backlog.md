@@ -6,6 +6,7 @@
 2. Add pause and resume for the same session.
 3. Add language preference controls, especially for Hindi.
 4. Decouple frontend and backend for remote use.
+5. Link Codex session to the vault path.
 
 ## Items
 
@@ -100,6 +101,24 @@ Likely work:
 Notes:
 - This is not about turning the project into SaaS right now.
 - The goal is personal remote usability: coffee shop, phone-only, backend elsewhere.
+
+### 5. Link Codex session to the vault path
+
+Status: Planned
+
+Why:
+- When the buddy answers questions, it should be able to look beyond the live session transcript and consult the Obsidian vault when relevant.
+- The Codex session should run with the vault as its working context so it can inspect existing notes and related material in the vault.
+
+Likely work:
+- Open the Codex app-server thread/session against the vault path instead of the app repo path.
+- Make the vault path explicit in backend configuration.
+- Ensure the model can safely search/read relevant vault files when answering questions.
+- Keep the live meeting context primary, but allow vault lookups as supporting context.
+
+Notes:
+- The desired vault path is the same Obsidian vault used for note writing.
+- This is about giving the model access to the vault as context, not moving note writing to the frontend.
 
 ## Source notes
 
