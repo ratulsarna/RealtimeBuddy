@@ -86,6 +86,7 @@ export class MeetingBroker {
         sampleRate: message.sampleRate,
         title: message.title,
         includeTabAudio: message.includeTabAudio,
+        languagePreference: message.languagePreference,
         sendEvent: (event) => {
           this.send(socket, event);
         },

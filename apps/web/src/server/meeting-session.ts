@@ -2,6 +2,10 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  resolveRealtimeLanguageCode,
+  type SessionLanguagePreference,
+} from "../shared/language-preferences";
 import { buildMeetingNote } from "./note-builder";
 import { ElevenLabsBridge } from "./elevenlabs-bridge";
 import { CodexAppServer } from "./codex-app-server";
@@ -75,6 +79,7 @@ type MeetingSessionOptions = {
   sampleRate: number;
   title: string;
   includeTabAudio: boolean;
+  languagePreference: SessionLanguagePreference;
   sendEvent: SendEvent;
 };
 
@@ -105,6 +110,8 @@ export class MeetingSession {
   private readonly sampleRate: number;
   private readonly title: string;
   private readonly includeTabAudio: boolean;
+  private readonly languagePreference: SessionLanguagePreference;
+  private readonly languageCode: string | undefined;
   private readonly sendEvent: SendEvent;
   private readonly transcriptSegments: TranscriptSegment[] = [];
   private readonly provisionalSegments: ProvisionalSegment[] = [];
@@ -142,6 +149,8 @@ export class MeetingSession {
     this.sampleRate = options.sampleRate;
     this.title = options.title.trim() || "Meeting Buddy";
     this.includeTabAudio = options.includeTabAudio;
+    this.languagePreference = options.languagePreference;
+    this.languageCode = resolveRealtimeLanguageCode(this.languagePreference);
     this.sendEvent = options.sendEvent;
     const safeFileTitle = this.sanitizeTitleForFileName(this.title);
 
@@ -165,6 +174,8 @@ export class MeetingSession {
       logPath: this.logPathRelative,
       includeTabAudio: this.includeTabAudio,
       sampleRate: this.sampleRate,
+      languagePreference: this.languagePreference,
+      languageCode: this.languageCode ?? "auto",
     });
 
     this.ensureElevenLabsConnected();
@@ -603,6 +614,7 @@ export class MeetingSession {
     const bridge = new ElevenLabsBridge({
       sampleRate: this.sampleRate,
       previousText,
+      languageCode: this.languageCode,
       onStatus: (message) => {
         if (this.elevenLabs !== bridge) {
           return;

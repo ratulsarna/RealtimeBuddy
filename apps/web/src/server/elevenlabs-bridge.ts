@@ -2,6 +2,7 @@ import WebSocket from "ws";
 
 type ElevenLabsBridgeOptions = {
   sampleRate: number;
+  languageCode?: string;
   previousText?: string;
   onStatus: (message: string) => void;
   onReady: () => void;
@@ -63,6 +64,21 @@ function isCommittedTranscriptMessage(
 
 const ELEVENLABS_ENDPOINT = "wss://api.elevenlabs.io/v1/speech-to-text/realtime";
 
+export function buildRealtimeTranscriptionQuery(options: {
+  sampleRate: number;
+  languageCode?: string;
+}) {
+  const query = new URLSearchParams({
+    model_id: "scribe_v2_realtime",
+    audio_format: `pcm_${options.sampleRate}`,
+    commit_strategy: "manual",
+  });
+  if (options.languageCode) {
+    query.set("language_code", options.languageCode);
+  }
+  return query;
+}
+
 export class ElevenLabsBridge {
   private readonly socket: WebSocket;
   private readonly sampleRate: number;
@@ -92,10 +108,9 @@ export class ElevenLabsBridge {
     this.onCommittedTranscript = options.onCommittedTranscript;
     this.onClose = options.onClose;
 
-    const query = new URLSearchParams({
-      model_id: "scribe_v2_realtime",
-      audio_format: `pcm_${this.sampleRate}`,
-      commit_strategy: "manual",
+    const query = buildRealtimeTranscriptionQuery({
+      sampleRate: this.sampleRate,
+      languageCode: options.languageCode,
     });
 
     this.socket = new WebSocket(`${ELEVENLABS_ENDPOINT}?${query.toString()}`, {

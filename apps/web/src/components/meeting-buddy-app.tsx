@@ -8,6 +8,11 @@ import {
   type AudioCaptureHandle,
   type AudioInputDevice,
 } from "@/lib/audio-capture";
+import {
+  getSessionLanguageLabel,
+  sessionLanguageOptions,
+  type SessionLanguagePreference,
+} from "@/shared/language-preferences";
 import { type ServerEvent } from "@/shared/protocol";
 
 type PendingTranscriptEntry = {
@@ -43,6 +48,7 @@ type ConnectionState = "idle" | "starting" | "live" | "pausing" | "paused" | "re
 export function MeetingBuddyApp() {
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [includeTabAudio, setIncludeTabAudio] = useState(false);
+  const [languagePreference, setLanguagePreference] = useState<SessionLanguagePreference>("auto");
   const [title, setTitle] = useState("Meeting Buddy");
   const [question, setQuestion] = useState("");
   const [microphones, setMicrophones] = useState<AudioInputDevice[]>([]);
@@ -261,6 +267,7 @@ export function MeetingBuddyApp() {
             sampleRate: capture.sampleRate,
             title,
             includeTabAudio: capture.tabAudioEnabled,
+            languagePreference,
           })
         );
         flushPendingSocketMessages();
@@ -557,6 +564,9 @@ export function MeetingBuddyApp() {
                 {logPathRelative ? (
                   <span className="rounded-full border border-[var(--line)] px-3 py-1">{logPathRelative}</span>
                 ) : null}
+                <span className="rounded-full border border-[var(--line)] px-3 py-1">
+                  {getSessionLanguageLabel(languagePreference)}
+                </span>
                 {audioDiagnostics ? (
                   <span className="rounded-full border border-[var(--line)] px-3 py-1">
                     gate {audioDiagnostics.gateOpen ? "open" : "closed"}
@@ -583,7 +593,27 @@ export function MeetingBuddyApp() {
                   />
                 </label>
 
-                <div className="grid gap-4 md:grid-cols-[1.2fr_auto]">
+                <div className="grid gap-4 md:grid-cols-[1fr_1.2fr_auto]">
+                  <label className="flex flex-col gap-2">
+                    <span className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
+                      Language
+                    </span>
+                    <select
+                      className="rounded-2xl border border-[var(--line)] bg-white/70 px-4 py-3 outline-none transition focus:border-[var(--accent)]"
+                      disabled={!canStart}
+                      onChange={(event) =>
+                        setLanguagePreference(event.target.value as SessionLanguagePreference)
+                      }
+                      value={languagePreference}
+                    >
+                      {sessionLanguageOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
                   <label className="flex flex-col gap-2">
                     <span className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
                       Microphone

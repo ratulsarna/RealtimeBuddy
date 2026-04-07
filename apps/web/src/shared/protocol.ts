@@ -1,9 +1,12 @@
+import type { SessionLanguagePreference } from "./language-preferences";
+
 export type ClientEvent =
   | {
       type: "start_session";
       sampleRate: number;
       title: string;
       includeTabAudio: boolean;
+      languagePreference: SessionLanguagePreference;
     }
   | {
       type: "audio_chunk";

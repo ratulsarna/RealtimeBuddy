@@ -7,6 +7,7 @@ const APP_URL = process.env.APP_URL ?? "http://localhost:3000";
 const FAKE_AUDIO_PATH = process.env.FAKE_AUDIO_PATH ?? "/tmp/realtimebuddy-e2e.wav";
 const VAULT_PATH =
   process.env.OBSIDIAN_VAULT_PATH ?? "/Users/ratulsarna/Vault/ObsidianVault";
+const WEB_OUTPUT_PATH = path.join(process.cwd(), "output", "session-logs");
 const title = `E2E Validation ${new Date().toISOString().slice(11, 19).replaceAll(":", "-")}`;
 
 async function main() {
@@ -38,6 +39,7 @@ async function main() {
   });
 
   await page.getByLabel("Session Title").fill(title);
+  await page.getByLabel("Language").selectOption("english");
 
   const tabAudioCheckbox = page.getByRole("checkbox", { name: "Try tab audio too" });
   if (await tabAudioCheckbox.isChecked()) {
@@ -134,6 +136,7 @@ async function main() {
   await browser.close();
 
   await waitForExpectedNote();
+  await waitForExpectedLog();
 
   console.log("E2E validation passed.");
 }
@@ -169,6 +172,36 @@ async function waitForExpectedNote() {
   throw new Error("Obsidian note did not contain the expected transcript/Q&A content.");
 }
 
+async function readLatestLog() {
+  const today = new Date().toISOString().slice(0, 10);
+  const logDir = path.join(WEB_OUTPUT_PATH, today);
+  const entries = await readdir(logDir, { withFileTypes: true });
+  const matching = entries
+    .filter((entry) => entry.isFile() && entry.name.startsWith(title))
+    .map((entry) => entry.name)
+    .sort();
+
+  if (matching.length === 0) {
+    throw new Error(`Could not find log for session title "${title}" in ${logDir}`);
+  }
+
+  const logPath = path.join(logDir, matching[matching.length - 1]);
+  return await readFile(logPath, "utf8");
+}
+
+async function waitForExpectedLog() {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const log = await readLatestLog();
+    if (hasExpectedLanguageConfig(log)) {
+      return log;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  throw new Error("Session log did not record the expected language configuration.");
+}
+
 function hasExpectedContent(note: string) {
   const normalized = note.toLowerCase();
 
@@ -180,6 +213,10 @@ function hasExpectedContent(note: string) {
     !note.includes("- Waiting for the first committed transcript.") &&
     !note.includes("- Transcript has not started yet.")
   );
+}
+
+function hasExpectedLanguageConfig(log: string) {
+  return log.includes('"languagePreference":"english"') && log.includes('"languageCode":"en"');
 }
 
 void main();

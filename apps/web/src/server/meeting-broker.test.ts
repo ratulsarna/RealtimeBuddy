@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 
+import type { SessionLanguagePreference } from "../shared/language-preferences";
 import { MeetingBroker } from "./meeting-broker";
 
 type MockSession = {
@@ -100,6 +101,7 @@ test("MeetingBroker routes pause and resume to the active session", async () => 
         sampleRate: 48_000,
         title: "Pause test",
         includeTabAudio: false,
+        languagePreference: "auto",
       })
     )
   );
@@ -158,6 +160,7 @@ test("MeetingBroker stops the active session when the socket closes", async () =
         sampleRate: 48_000,
         title: "Close test",
         includeTabAudio: true,
+        languagePreference: "english",
       })
     )
   );
@@ -206,6 +209,7 @@ test("MeetingBroker serializes pause and resume on the same socket", async () =>
         sampleRate: 48_000,
         title: "Serialized lifecycle",
         includeTabAudio: false,
+        languagePreference: "auto",
       })
     )
   );
@@ -263,6 +267,7 @@ test("MeetingBroker stops immediately when the socket closes during in-flight wo
         sampleRate: 48_000,
         title: "Close during ask",
         includeTabAudio: false,
+        languagePreference: "auto",
       })
     )
   );
@@ -325,6 +330,7 @@ test("MeetingBroker keeps live audio flowing while an ask is in flight", async (
         sampleRate: 48_000,
         title: "Audio during ask",
         includeTabAudio: false,
+        languagePreference: "auto",
       })
     )
   );
@@ -358,4 +364,30 @@ test("MeetingBroker keeps live audio flowing while an ask is in flight", async (
   releaseAsk?.();
   await flushAsyncWork();
   assert.deepEqual(callOrder, ["start", "ask:start", "audio", "ask:end"]);
+});
+
+test("MeetingBroker forwards the selected language preference into session creation", async () => {
+  let receivedLanguagePreference: SessionLanguagePreference | null = null;
+  const broker = new MeetingBroker((options) => {
+    receivedLanguagePreference = options.languagePreference;
+    return createMockSession();
+  });
+  const socket = new MockSocket();
+
+  broker.attach(socket as never);
+  socket.emit(
+    "message",
+    Buffer.from(
+      JSON.stringify({
+        type: "start_session",
+        sampleRate: 48_000,
+        title: "Language test",
+        includeTabAudio: false,
+        languagePreference: "hinglish",
+      })
+    )
+  );
+  await flushAsyncWork();
+
+  assert.equal(receivedLanguagePreference, "hinglish");
 });
