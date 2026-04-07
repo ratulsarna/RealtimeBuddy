@@ -30,6 +30,11 @@ type SendEvent = (event:
       text: string;
     }
   | {
+      type: "transcript_provisional";
+      text: string;
+      provisionalAt: string;
+    }
+  | {
       type: "transcript_committed";
       text: string;
       committedAt: string;
@@ -66,6 +71,11 @@ type TranscriptSegment = {
   committedAt: string;
 };
 
+type ProvisionalSegment = {
+  text: string;
+  provisionalAt: string;
+};
+
 type QuestionAnswer = {
   question: string;
   answer: string;
@@ -83,6 +93,7 @@ export class MeetingSession {
   private readonly includeTabAudio: boolean;
   private readonly sendEvent: SendEvent;
   private readonly transcriptSegments: TranscriptSegment[] = [];
+  private readonly provisionalSegments: ProvisionalSegment[] = [];
   private readonly questionAnswers: QuestionAnswer[] = [];
   private readonly startedAt = new Date();
   private readonly vaultPath = process.env.OBSIDIAN_VAULT_PATH ?? DEFAULT_VAULT_PATH;
@@ -95,6 +106,7 @@ export class MeetingSession {
 
   private elevenLabs: ElevenLabsBridge | null = null;
   private partialTranscript = "";
+  private lastProvisionalText = "";
   private askQueue = Promise.resolve();
   private commitQueue = Promise.resolve();
   private audioChunkCount = 0;
@@ -240,6 +252,7 @@ export class MeetingSession {
         return;
       }
 
+      this.snapshotPartialTranscript();
       await this.logEvent("commit_requested", {
         partialTranscript: this.partialTranscript,
       });
@@ -269,6 +282,10 @@ export class MeetingSession {
     }
 
     this.partialTranscript = "";
+    this.lastProvisionalText = "";
+    if (this.provisionalSegments.length > 0) {
+      this.provisionalSegments.shift();
+    }
     const committedAt = this.timeStamp(new Date());
 
     this.transcriptSegments.push({
@@ -302,12 +319,17 @@ export class MeetingSession {
       .slice(-24)
       .map((segment) => `- [${segment.committedAt}] ${segment.text}`)
       .join("\n");
+    const provisionalContext = this.provisionalSegments
+      .slice(-8)
+      .map((segment) => `- [pending ${segment.provisionalAt}] ${segment.text}`)
+      .join("\n");
 
     return [
       this.currentMarkdown(),
       "",
       "Recent transcript excerpts:",
-      transcriptContext || "- No committed transcript yet.",
+      [transcriptContext, provisionalContext].filter(Boolean).join("\n") ||
+        "- No committed transcript yet.",
     ].join("\n");
   }
 
@@ -317,6 +339,7 @@ export class MeetingSession {
       startedAt: this.formatDateTime(this.startedAt),
       includeTabAudio: this.includeTabAudio,
       transcriptSegments: this.transcriptSegments,
+      provisionalSegments: this.provisionalSegments,
       partialTranscript: this.partialTranscript,
       questionAnswers: this.questionAnswers,
     });
@@ -337,6 +360,31 @@ export class MeetingSession {
       })}\n`,
       "utf8"
     );
+  }
+
+  private snapshotPartialTranscript() {
+    const provisionalText = this.partialTranscript.trim();
+    if (!provisionalText || provisionalText === this.lastProvisionalText) {
+      return;
+    }
+
+    const provisionalAt = this.timeStamp(new Date());
+    this.provisionalSegments.push({
+      text: provisionalText,
+      provisionalAt,
+    });
+    this.lastProvisionalText = provisionalText;
+    this.sendEvent({
+      type: "transcript_provisional",
+      text: provisionalText,
+      provisionalAt,
+    });
+    void this.logEvent("transcript_provisional", {
+      text: provisionalText,
+      provisionalAt,
+      totalProvisionalSegments: this.provisionalSegments.length,
+    });
+    this.sendEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
   }
 
   private formatDateTime(date: Date) {

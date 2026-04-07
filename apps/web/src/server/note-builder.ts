@@ -3,6 +3,11 @@ type TranscriptSegment = {
   committedAt: string;
 };
 
+type ProvisionalSegment = {
+  text: string;
+  provisionalAt: string;
+};
+
 type QuestionAnswer = {
   question: string;
   answer: string;
@@ -14,23 +19,33 @@ type NoteContent = {
   startedAt: string;
   includeTabAudio: boolean;
   transcriptSegments: TranscriptSegment[];
+  provisionalSegments: ProvisionalSegment[];
   partialTranscript: string;
   questionAnswers: QuestionAnswer[];
 };
 
 export function buildMeetingNote(content: NoteContent): string {
   const latestNotes = content.transcriptSegments.slice(-8);
+  const provisionalNotes = content.provisionalSegments.slice(-4);
   const questionAnswers = content.questionAnswers.slice(-6);
+  const allLiveNotes = [...latestNotes, ...provisionalNotes];
 
   const liveNotes =
-    latestNotes.length > 0
-      ? latestNotes.map((segment) => `- ${segment.text}`).join("\n")
+    allLiveNotes.length > 0
+      ? allLiveNotes.map((segment) => `- ${segment.text}`).join("\n")
       : "- Waiting for the first committed transcript.";
 
   const transcript =
-    content.transcriptSegments.length > 0
-      ? content.transcriptSegments
-          .map((segment) => `- [${segment.committedAt}] ${segment.text}`)
+    content.transcriptSegments.length > 0 || content.provisionalSegments.length > 0
+      ? [
+          ...content.transcriptSegments.map(
+            (segment) => `- [${segment.committedAt}] ${segment.text}`
+          ),
+          ...content.provisionalSegments.map(
+            (segment) => `- [pending ${segment.provisionalAt}] ${segment.text}`
+          ),
+        ]
+          .filter(Boolean)
           .join("\n")
       : "- Transcript has not started yet.";
 

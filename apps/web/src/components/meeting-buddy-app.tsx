@@ -12,7 +12,7 @@ import { type ServerEvent } from "@/shared/protocol";
 
 type TranscriptEntry = {
   text: string;
-  committedAt: string;
+  at: string;
 };
 
 type QuestionAnswer = {
@@ -31,6 +31,7 @@ export function MeetingBuddyApp() {
   const [selectedMicId, setSelectedMicId] = useState("");
   const [audioLevel, setAudioLevel] = useState(0);
   const [partialTranscript, setPartialTranscript] = useState("");
+  const [provisionalEntries, setProvisionalEntries] = useState<TranscriptEntry[]>([]);
   const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
   const [noteMarkdown, setNoteMarkdown] = useState("");
   const [notePathRelative, setNotePathRelative] = useState("");
@@ -82,6 +83,7 @@ export function MeetingBuddyApp() {
     setConnectionState("starting");
     setAudioLevel(0);
     setPartialTranscript("");
+    setProvisionalEntries([]);
     setTranscriptEntries([]);
     setQuestionAnswers([]);
     setCurrentAnswer("");
@@ -221,12 +223,25 @@ export function MeetingBuddyApp() {
       return;
     }
 
+    if (event.type === "transcript_provisional") {
+      setPartialTranscript("");
+      setProvisionalEntries((current) => [
+        ...current,
+        {
+          text: event.text,
+          at: event.provisionalAt,
+        },
+      ]);
+      return;
+    }
+
     if (event.type === "transcript_committed") {
       setPartialTranscript("");
+      setProvisionalEntries((current) => current.slice(1));
       setTranscriptEntries((current) => [
         {
           text: event.text,
-          committedAt: event.committedAt,
+          at: event.committedAt,
         },
         ...current,
       ]);
@@ -458,14 +473,29 @@ export function MeetingBuddyApp() {
                 <p className="mt-2 text-sm leading-7">{partialTranscript}</p>
               </div>
             ) : null}
+            {provisionalEntries.length > 0 ? (
+              <div className="mt-4 flex flex-col gap-3">
+                {provisionalEntries.map((entry) => (
+                  <div
+                    className="rounded-[1.5rem] border border-dashed border-[var(--line)] bg-white/70 p-4"
+                    key={`pending-${entry.at}-${entry.text}`}
+                  >
+                    <p className="mono text-xs uppercase tracking-[0.18em] text-[var(--ink-soft)]">
+                      Pending commit {entry.at}
+                    </p>
+                    <p className="mt-2 text-sm leading-7">{entry.text}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="mt-4 flex max-h-[32rem] flex-col gap-3 overflow-auto pr-1">
               {transcriptEntries.length > 0 ? (
                 transcriptEntries.map((entry) => (
                   <div
                     className="rounded-[1.5rem] border border-[var(--line)] bg-white/70 p-4"
-                    key={`${entry.committedAt}-${entry.text}`}
+                    key={`${entry.at}-${entry.text}`}
                   >
-                    <p className="mono text-xs text-[var(--ink-soft)]">{entry.committedAt}</p>
+                    <p className="mono text-xs text-[var(--ink-soft)]">{entry.at}</p>
                     <p className="mt-2 text-sm leading-7">{entry.text}</p>
                   </div>
                 ))

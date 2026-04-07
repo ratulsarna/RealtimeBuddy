@@ -40,6 +40,11 @@ export type ServerEvent =
       text: string;
     }
   | {
+      type: "transcript_provisional";
+      text: string;
+      provisionalAt: string;
+    }
+  | {
       type: "transcript_committed";
       text: string;
       committedAt: string;
