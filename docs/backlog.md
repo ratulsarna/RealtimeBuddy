@@ -2,53 +2,14 @@
 
 ## Current priority
 
-1. Improve microphone sensitivity and gain tuning.
-2. Add pause and resume for the same session.
-3. Add language preference controls, especially for Hindi.
-4. Decouple frontend and backend for remote use.
-5. Link Codex session to the vault path.
+1. Add pause and resume for the same session.
+2. Add language preference controls, especially for Hindi.
+3. Decouple frontend and backend for remote use.
+4. Link Codex session to the vault path.
 
 ## Items
 
-### 1. Improve microphone sensitivity and gain tuning
-
-Status: Next
-
-Why:
-- Current capture feels under-gained.
-- You have to be too close to the mic for reliable transcription.
-
-Likely work:
-- Revisit the current browser audio constraints and filter chain.
-- Tune gate thresholds after the move to `AudioWorklet`.
-- Consider making gain and speech-threshold controls adjustable in the UI.
-- Add a simple calibration/test step before starting a session.
-- Add a real speech denoiser before transcription, not just gating.
-
-Recommended technical direction:
-- Do not rely on gain changes alone.
-- Do not use heavy vocal-stem separation for live mic capture.
-- Prefer a layered approach:
-- Browser / device noise suppression where available.
-- Voice activity detection / gating.
-- A speech enhancement model tuned for low-latency denoising.
-
-Candidate options:
-- RNNoise:
-  lightweight, realtime, speech-focused denoiser; strong fit for browser or mobile integration.
-- WebRTC Audio Processing Module:
-  includes noise suppression, echo cancellation, and automatic gain control; especially useful in native/mobile paths.
-- DeepFilterNet:
-  stronger enhancement quality than lightweight denoisers, but heavier and more operationally expensive for a web-first realtime path.
-- Silero VAD:
-  useful for speech detection and turn boundaries, but not a denoiser by itself.
-
-Current recommendation:
-- Short term: tune gain and thresholds conservatively and add RNNoise-class denoising.
-- Medium term: for mobile/native paths, evaluate WebRTC APM or a native RNNoise integration.
-- Avoid Demucs-style source separation for live meetings unless we later support offline cleanup, because it is heavier and more artifact-prone for this use case.
-
-### 2. Pause and resume the same session
+### 1. Pause and resume the same session
 
 Status: Planned
 
@@ -60,7 +21,7 @@ Likely work:
 - Keep the same note, session state, transcript history, and Codex thread alive across pauses.
 - Reflect paused state clearly in the UI and logs.
 
-### 3. Language preference controls
+### 2. Language preference controls
 
 Status: Planned
 
@@ -77,7 +38,7 @@ Notes:
 - ElevenLabs realtime STT supports an optional `language_code` parameter.
 - If the language is known ahead of time, their docs say it can improve transcription performance.
 
-### 4. Decouple frontend and backend for remote use
+### 3. Decouple frontend and backend for remote use
 
 Status: Planned
 
@@ -102,7 +63,7 @@ Notes:
 - This is not about turning the project into SaaS right now.
 - The goal is personal remote usability: coffee shop, phone-only, backend elsewhere.
 
-### 5. Link Codex session to the vault path
+### 4. Link Codex session to the vault path
 
 Status: Planned
 
