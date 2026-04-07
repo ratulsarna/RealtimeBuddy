@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4efe6;
+  --foreground: #1a1713;
+  --panel: rgba(255, 251, 245, 0.76);
+  --panel-strong: rgba(255, 250, 242, 0.92);
+  --line: rgba(69, 47, 28, 0.12);
+  --accent: #d7673f;
+  --accent-soft: #f2c8b3;
+  --ink-soft: #6b5a4b;
+  --glow: rgba(215, 103, 63, 0.18);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-space-grotesk);
+  --font-mono: var(--font-plex-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background:
+    radial-gradient(circle at top left, rgba(234, 160, 121, 0.3), transparent 28%),
+    radial-gradient(circle at top right, rgba(86, 139, 128, 0.16), transparent 24%),
+    linear-gradient(180deg, #f7f1e8 0%, #efe6d8 100%);
+}
+
+body {
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-space-grotesk), sans-serif;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(215, 103, 63, 0.22);
+}
+
+.app-shell {
+  min-height: 100vh;
+  width: 100%;
+}
+
+.glass-panel {
+  background: var(--panel);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--line);
+  box-shadow:
+    0 18px 55px rgba(69, 47, 28, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.grain {
+  position: relative;
+}
+
+.grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08)),
+    radial-gradient(rgba(26, 23, 19, 0.05) 0.5px, transparent 0.5px);
+  background-size: auto, 12px 12px;
+  opacity: 0.24;
+}
+
+.mono {
+  font-family: var(--font-plex-mono), monospace;
+}

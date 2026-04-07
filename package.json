@@ -1,0 +1,12 @@
+{
+  "name": "realtimebuddy",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "pnpm --filter @realtimebuddy/web dev",
+    "build": "pnpm --filter @realtimebuddy/web build",
+    "start": "pnpm --filter @realtimebuddy/web start",
+    "lint": "pnpm --filter @realtimebuddy/web lint",
+    "e2e:validate": "pnpm --filter @realtimebuddy/web e2e:validate"
+  }
+}
