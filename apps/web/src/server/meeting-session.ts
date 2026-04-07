@@ -126,12 +126,12 @@ export class MeetingSession {
     this.sendEvent = options.sendEvent;
 
     const noteFolder = path.join(this.vaultPath, "Notes", "Dated", this.dateStamp(this.startedAt));
-    const noteFileName = `${this.title} - ${this.timeStamp(this.startedAt)}.md`;
+    const noteFileName = `${this.title} - ${this.fileStamp(this.startedAt)}.md`;
     this.notePath = path.join(noteFolder, noteFileName);
     this.notePathRelative = path.relative(this.vaultPath, this.notePath);
 
     const logFolder = path.join(WEB_APP_DIR, "output", "session-logs", this.dateStamp(this.startedAt));
-    const logFileName = `${this.title} - ${this.timeStamp(this.startedAt)}.jsonl`;
+    const logFileName = `${this.title} - ${this.fileStamp(this.startedAt)}.jsonl`;
     this.logPath = path.join(logFolder, logFileName);
     this.logPathRelative = path.relative(WEB_APP_DIR, this.logPath);
   }
@@ -262,7 +262,7 @@ export class MeetingSession {
 
   commitTranscript() {
     this.commitQueue = this.commitQueue.then(async () => {
-      if (!this.partialTranscript.trim() || !this.elevenLabs || !this.bridgeReady) {
+      if (!this.elevenLabs || !this.bridgeReady) {
         return;
       }
 
@@ -271,7 +271,10 @@ export class MeetingSession {
         return;
       }
 
-      const provisionalId = this.snapshotPartialTranscript();
+      // A pause/stop can land before ElevenLabs has emitted a partial transcript.
+      // Commit anyway so already-sent audio is finalized, but only snapshot a
+      // provisional segment when we have actual partial text to reconcile.
+      const provisionalId = this.partialTranscript.trim() ? this.snapshotPartialTranscript() : "";
       if (provisionalId) {
         this.pendingCommitProvisionalIds.push(provisionalId);
       }
@@ -599,5 +602,13 @@ export class MeetingSession {
     const hours = `${date.getHours()}`.padStart(2, "0");
     const minutes = `${date.getMinutes()}`.padStart(2, "0");
     return `${hours}-${minutes}`;
+  }
+
+  private fileStamp(date: Date) {
+    const hours = `${date.getHours()}`.padStart(2, "0");
+    const minutes = `${date.getMinutes()}`.padStart(2, "0");
+    const seconds = `${date.getSeconds()}`.padStart(2, "0");
+    const milliseconds = `${date.getMilliseconds()}`.padStart(3, "0");
+    return `${hours}-${minutes}-${seconds}-${milliseconds}`;
   }
 }

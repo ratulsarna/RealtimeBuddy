@@ -64,6 +64,7 @@ export function MeetingBuddyApp() {
   const pendingQuestionRef = useRef("");
   const answerBufferRef = useRef("");
   const answerFlushTimerRef = useRef<number | null>(null);
+  const pendingSocketMessagesRef = useRef<string[]>([]);
 
   useEffect(() => {
     if (window.location.hostname === "0.0.0.0") {
@@ -90,12 +91,23 @@ export function MeetingBuddyApp() {
       }
       captureRef.current?.stop();
       socketRef.current?.close();
+      pendingSocketMessagesRef.current = [];
     };
   }, []);
 
   const selectedMicLabel =
     microphones.find((device) => device.deviceId === selectedMicId)?.label ||
     "Browser default microphone";
+
+  const queueOrSendSocketMessage = (payload: string) => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      pendingSocketMessagesRef.current.push(payload);
+      return;
+    }
+
+    socket.send(payload);
+  };
 
   const startSession = () => {
     setConnectionState("starting");
@@ -115,17 +127,13 @@ export function MeetingBuddyApp() {
       window.clearTimeout(answerFlushTimerRef.current);
       answerFlushTimerRef.current = null;
     }
+    pendingSocketMessagesRef.current = [];
 
     void startAudioCapture({
       includeTabAudio,
       deviceId: selectedMicId || undefined,
       onChunk: (pcmBase64, sampleRate) => {
-        const socket = socketRef.current;
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-          return;
-        }
-
-        socket.send(
+        queueOrSendSocketMessage(
           JSON.stringify({
             type: "audio_chunk",
             pcmBase64,
@@ -134,12 +142,7 @@ export function MeetingBuddyApp() {
         );
       },
       onSpeechPause: () => {
-        const socket = socketRef.current;
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-          return;
-        }
-
-        socket.send(
+        queueOrSendSocketMessage(
           JSON.stringify({
             type: "commit_transcript",
           })
@@ -151,12 +154,7 @@ export function MeetingBuddyApp() {
       onDebug: (diagnostics) => {
         setAudioDiagnostics(diagnostics);
 
-        const socket = socketRef.current;
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-          return;
-        }
-
-        socket.send(
+        queueOrSendSocketMessage(
           JSON.stringify({
             type: "audio_debug",
             ...diagnostics,
@@ -188,6 +186,10 @@ export function MeetingBuddyApp() {
               includeTabAudio: capture.tabAudioEnabled,
             })
           );
+          for (const payload of pendingSocketMessagesRef.current) {
+            socket.send(payload);
+          }
+          pendingSocketMessagesRef.current = [];
         };
 
         socket.onmessage = (event) => {
@@ -202,6 +204,7 @@ export function MeetingBuddyApp() {
           captureRef.current?.stop();
           captureRef.current = null;
           socketRef.current = null;
+          pendingSocketMessagesRef.current = [];
         };
       })
       .catch((error: unknown) => {
