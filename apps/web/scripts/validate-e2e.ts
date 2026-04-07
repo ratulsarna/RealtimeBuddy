@@ -70,6 +70,36 @@ async function main() {
     { timeout: 60_000 }
   );
 
+  const transcriptCommitsBeforePause = await page.evaluate(() => {
+    const match = document.body.innerText.match(/(\d+) commits/);
+    return match ? Number(match[1]) : 0;
+  });
+
+  await page.getByRole("button", { name: "Pause" }).click();
+
+  await page.waitForFunction(
+    () => document.body.innerText.includes("Capture paused. Resume when you are ready."),
+    undefined,
+    { timeout: 30_000 }
+  );
+
+  await page.getByRole("button", { name: "Resume" }).click();
+
+  await page.waitForFunction(
+    () => document.body.innerText.includes("Listening live on"),
+    undefined,
+    { timeout: 60_000 }
+  );
+
+  await page.waitForFunction(
+    (previousCommitCount) => {
+      const match = document.body.innerText.match(/(\d+) commits/);
+      return match ? Number(match[1]) > Number(previousCommitCount) : false;
+    },
+    transcriptCommitsBeforePause,
+    { timeout: 60_000 }
+  );
+
   await page
     .getByRole("textbox", { name: "What did we decide about deadlines?" })
     .fill("When is the launch and who owns the demo?");

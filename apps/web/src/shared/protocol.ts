@@ -25,6 +25,12 @@ export type ClientEvent =
       type: "commit_transcript";
     }
   | {
+      type: "pause_session";
+    }
+  | {
+      type: "resume_session";
+    }
+  | {
       type: "ask";
       question: string;
     }
@@ -69,6 +75,12 @@ export type ServerEvent =
   | {
       type: "notes_updated";
       markdown: string;
+    }
+  | {
+      type: "session_paused";
+    }
+  | {
+      type: "session_resumed";
     }
   | {
       type: "answer_delta";

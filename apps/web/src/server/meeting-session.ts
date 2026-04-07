@@ -50,6 +50,12 @@ type SendEvent = (event:
       markdown: string;
     }
   | {
+      type: "session_paused";
+    }
+  | {
+      type: "session_resumed";
+    }
+  | {
       type: "answer_delta";
       delta: string;
     }
@@ -116,6 +122,10 @@ export class MeetingSession {
   private elevenLabs: ElevenLabsBridge | null = null;
   private partialTranscript = "";
   private lastProvisionalText = "";
+  private paused = false;
+  private resumePending = false;
+  private stopping = false;
+  private pausePromise: Promise<void> | null = null;
   private askQueue = Promise.resolve();
   private commitQueue = Promise.resolve();
   private audioChunkCount = 0;
@@ -178,6 +188,10 @@ export class MeetingSession {
   }
 
   pushAudioChunk(chunk: AudioChunk) {
+    if (this.stopped || this.paused) {
+      return;
+    }
+
     if (!this.elevenLabs || !this.bridgeReady) {
       this.enqueueAudioChunk(chunk);
       this.ensureElevenLabsConnected();
@@ -205,6 +219,10 @@ export class MeetingSession {
     sentChunks: number;
     droppedChunks: number;
   }) {
+    if (this.stopped || this.paused) {
+      return;
+    }
+
     void this.logEvent("audio_debug", {
       rms: Number(diagnostics.rms.toFixed(4)),
       peak: Number(diagnostics.peak.toFixed(4)),
@@ -272,6 +290,52 @@ export class MeetingSession {
     return runAsk;
   }
 
+  async pause() {
+    if (this.pausePromise) {
+      return this.pausePromise;
+    }
+
+    if (this.stopped || this.paused) {
+      return;
+    }
+
+    const runPause = (async () => {
+      this.paused = true;
+      this.resumePending = false;
+      await this.commitTranscript();
+      this.closeElevenLabs({ recoverPendingAudio: true });
+      await this.writeNote();
+      await this.logEvent("session_paused", {
+        transcriptSegments: this.transcriptSegments.length,
+        questionsAnswered: this.questionAnswers.length,
+        audioChunksReceived: this.audioChunkCount,
+      });
+      this.sendEvent({ type: "session_paused" });
+    })();
+
+    this.pausePromise = runPause.finally(() => {
+      this.pausePromise = null;
+    });
+
+    return this.pausePromise;
+  }
+
+  async resume() {
+    if (this.stopped || !this.paused) {
+      return;
+    }
+
+    this.paused = false;
+    this.resumePending = true;
+    await this.logEvent("resume_requested", {
+      transcriptSegments: this.transcriptSegments.length,
+      questionsAnswered: this.questionAnswers.length,
+      bufferedAudioChunks: this.audioQueue.length,
+    });
+    this.ensureElevenLabsConnected();
+    this.flushQueuedAudio();
+  }
+
   commitTranscript() {
     this.commitQueue = this.commitQueue.then(async () => {
       if (!this.elevenLabs || !this.bridgeReady) {
@@ -301,12 +365,38 @@ export class MeetingSession {
   }
 
   async stop() {
+    this.stopping = true;
+    this.resumePending = false;
+    await this.pausePromise;
+
+    if (this.audioQueue.length > 0 && (this.paused || this.bridgeConnecting || !this.bridgeReady)) {
+      this.paused = false;
+      this.sendEvent({
+        type: "status",
+        message: "Finalizing buffered audio before stopping...",
+      });
+      await this.logEvent("stop_flushing_buffered_audio", {
+        bufferedAudioChunks: this.audioQueue.length,
+      });
+      this.ensureElevenLabsConnected();
+      try {
+        await this.waitForBridgeReady();
+        await this.commitTranscript();
+      } catch (error) {
+        await this.logEvent("stop_buffered_audio_unavailable", {
+          bufferedAudioChunks: this.audioQueue.length,
+          message: String(error),
+        });
+        this.sendEvent({
+          type: "status",
+          message: "Could not finalize the last buffered audio before stopping.",
+        });
+      }
+    }
+
     this.stopped = true;
     await this.commitTranscript();
-    this.elevenLabs?.close();
-    this.elevenLabs = null;
-    this.bridgeReady = false;
-    this.bridgeConnecting = false;
+    this.closeElevenLabs();
     this.codex.close();
     await this.writeNote();
     await this.logEvent("session_stopped", {
@@ -497,7 +587,7 @@ export class MeetingSession {
   }
 
   private ensureElevenLabsConnected() {
-    if (this.stopped || this.elevenLabs || this.bridgeConnecting) {
+    if (this.stopped || this.paused || this.elevenLabs || this.bridgeConnecting) {
       return;
     }
 
@@ -531,6 +621,15 @@ export class MeetingSession {
         void this.logEvent("elevenlabs_ready", {
           attempt: this.bridgeConnectionAttempts,
         });
+        if (this.resumePending && !this.stopping) {
+          this.resumePending = false;
+          void this.logEvent("session_resumed", {
+            transcriptSegments: this.transcriptSegments.length,
+            questionsAnswered: this.questionAnswers.length,
+            bufferedAudioChunks: this.audioQueue.length,
+          });
+          this.sendEvent({ type: "session_resumed" });
+        }
         this.flushQueuedAudio();
       },
       onPartialTranscript: (text) => {
@@ -572,8 +671,7 @@ export class MeetingSession {
           recoveredQueuedChunks: recoveredChunks.length,
         });
 
-        if (intentional || this.stopped) {
-          this.sendEvent({ type: "status", message: "ElevenLabs connection closed." });
+        if (intentional || this.stopped || this.paused) {
           return;
         }
 
@@ -588,6 +686,20 @@ export class MeetingSession {
     this.elevenLabs = bridge;
   }
 
+  private closeElevenLabs(options: { recoverPendingAudio?: boolean } = {}) {
+    if (options.recoverPendingAudio) {
+      const recoveredChunks = this.elevenLabs?.drainPendingAudioChunks() ?? [];
+      if (recoveredChunks.length > 0) {
+        this.audioQueue.unshift(...recoveredChunks);
+      }
+    }
+
+    this.elevenLabs?.close();
+    this.elevenLabs = null;
+    this.bridgeReady = false;
+    this.bridgeConnecting = false;
+  }
+
   private reconnectionContext() {
     const mostRecentText =
       this.transcriptSegments[this.transcriptSegments.length - 1]?.text ??
@@ -595,6 +707,18 @@ export class MeetingSession {
       "";
 
     return mostRecentText.slice(-48);
+  }
+
+  private async waitForBridgeReady(timeoutMs = 15_000) {
+    const startedAt = Date.now();
+
+    while (!this.bridgeReady) {
+      if (Date.now() - startedAt > timeoutMs) {
+        throw new Error("Timed out waiting for ElevenLabs to reconnect.");
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
   }
 
   private snapshotPartialTranscript() {

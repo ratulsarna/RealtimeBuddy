@@ -37,7 +37,8 @@ type AudioDiagnostics = {
   droppedChunks: number;
 };
 
-type ConnectionState = "idle" | "starting" | "live" | "stopping";
+type CaptureIntent = "idle" | "starting" | "resuming";
+type ConnectionState = "idle" | "starting" | "live" | "pausing" | "paused" | "resuming" | "stopping";
 
 export function MeetingBuddyApp() {
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
@@ -65,7 +66,11 @@ export function MeetingBuddyApp() {
   const pendingQuestionRef = useRef("");
   const answerBufferRef = useRef("");
   const answerFlushTimerRef = useRef<number | null>(null);
+  const pauseFlushTimerRef = useRef<number | null>(null);
   const pendingSocketMessagesRef = useRef<string[]>([]);
+  const captureRequestIdRef = useRef(0);
+  const captureIntentRef = useRef<CaptureIntent>("idle");
+  const captureForwardingEnabledRef = useRef(true);
 
   useEffect(() => {
     if (window.location.hostname === "0.0.0.0") {
@@ -90,6 +95,12 @@ export function MeetingBuddyApp() {
       if (answerFlushTimerRef.current !== null) {
         window.clearTimeout(answerFlushTimerRef.current);
       }
+      if (pauseFlushTimerRef.current !== null) {
+        window.clearTimeout(pauseFlushTimerRef.current);
+      }
+      captureIntentRef.current = "idle";
+      captureForwardingEnabledRef.current = true;
+      captureRequestIdRef.current += 1;
       captureRef.current?.stop();
       socketRef.current?.close();
       pendingSocketMessagesRef.current = [];
@@ -108,6 +119,104 @@ export function MeetingBuddyApp() {
     }
 
     socket.send(payload);
+  };
+
+  const flushPendingSocketMessages = () => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN || !captureForwardingEnabledRef.current) {
+      return;
+    }
+
+    for (const payload of pendingSocketMessagesRef.current) {
+      socket.send(payload);
+    }
+    pendingSocketMessagesRef.current = [];
+  };
+
+  const queueOrSendCaptureMessage = (payload: string) => {
+    if (!captureForwardingEnabledRef.current) {
+      pendingSocketMessagesRef.current.push(payload);
+      return;
+    }
+
+    queueOrSendSocketMessage(payload);
+  };
+
+  const isCurrentCaptureRequest = (requestId: number, expectedIntent: CaptureIntent) => {
+    if (requestId !== captureRequestIdRef.current || captureIntentRef.current !== expectedIntent) {
+      return false;
+    }
+
+    if (expectedIntent === "resuming") {
+      return socketRef.current?.readyState === WebSocket.OPEN;
+    }
+
+    return true;
+  };
+
+  const startCapture = (
+    onReady: (capture: AudioCaptureHandle) => void,
+    onErrorState: ConnectionState,
+    readyMessage: (capture: AudioCaptureHandle) => string,
+    requestId: number,
+    expectedIntent: CaptureIntent
+  ) => {
+    void startAudioCapture({
+      includeTabAudio,
+      deviceId: selectedMicId || undefined,
+      onChunk: (pcmBase64, sampleRate) => {
+        queueOrSendCaptureMessage(
+          JSON.stringify({
+            type: "audio_chunk",
+            pcmBase64,
+            sampleRate,
+          })
+        );
+      },
+      onSpeechPause: () => {
+        queueOrSendCaptureMessage(
+          JSON.stringify({
+            type: "commit_transcript",
+          })
+        );
+      },
+      onLevel: (level) => {
+        setAudioLevel(level);
+      },
+      onDebug: (diagnostics) => {
+        setAudioDiagnostics(diagnostics);
+
+        queueOrSendCaptureMessage(
+          JSON.stringify({
+            type: "audio_debug",
+            ...diagnostics,
+          })
+        );
+      },
+      })
+      .then((capture) => {
+        if (!isCurrentCaptureRequest(requestId, expectedIntent)) {
+          capture.stop();
+          return;
+        }
+
+        captureRef.current = capture;
+        void listAudioInputDevices().then((devices) => {
+          setMicrophones(devices);
+        });
+        setStatusMessage(readyMessage(capture));
+        onReady(capture);
+      })
+      .catch((error: unknown) => {
+        if (!isCurrentCaptureRequest(requestId, expectedIntent)) {
+          return;
+        }
+
+        setConnectionState(onErrorState);
+        captureIntentRef.current = "idle";
+        setAudioLevel(0);
+        setStatusMessage(String(error));
+      });
   };
 
   const startSession = () => {
@@ -130,99 +239,123 @@ export function MeetingBuddyApp() {
       window.clearTimeout(answerFlushTimerRef.current);
       answerFlushTimerRef.current = null;
     }
+    if (pauseFlushTimerRef.current !== null) {
+      window.clearTimeout(pauseFlushTimerRef.current);
+      pauseFlushTimerRef.current = null;
+    }
     pendingSocketMessagesRef.current = [];
+    captureForwardingEnabledRef.current = true;
+    captureIntentRef.current = "starting";
+    const requestId = captureRequestIdRef.current + 1;
+    captureRequestIdRef.current = requestId;
 
-    void startAudioCapture({
-      includeTabAudio,
-      deviceId: selectedMicId || undefined,
-      onChunk: (pcmBase64, sampleRate) => {
-        queueOrSendSocketMessage(
+    startCapture((capture) => {
+      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+      const socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
+      socketRef.current = socket;
+
+      socket.onopen = () => {
+        socket.send(
           JSON.stringify({
-            type: "audio_chunk",
-            pcmBase64,
-            sampleRate,
+            type: "start_session",
+            sampleRate: capture.sampleRate,
+            title,
+            includeTabAudio: capture.tabAudioEnabled,
           })
         );
-      },
-      onSpeechPause: () => {
-        queueOrSendSocketMessage(
-          JSON.stringify({
-            type: "commit_transcript",
-          })
-        );
-      },
-      onLevel: (level) => {
-        setAudioLevel(level);
-      },
-      onDebug: (diagnostics) => {
-        setAudioDiagnostics(diagnostics);
+        flushPendingSocketMessages();
+      };
 
-        queueOrSendSocketMessage(
-          JSON.stringify({
-            type: "audio_debug",
-            ...diagnostics,
-          })
-        );
-      },
-    })
-      .then((capture) => {
-        captureRef.current = capture;
-        void listAudioInputDevices().then((devices) => {
-          setMicrophones(devices);
-        });
-        setStatusMessage(
-          capture.tabAudioEnabled
-            ? `${selectedMicLabel} is live with tab audio.`
-            : `${selectedMicLabel} is live.`
-        );
+      socket.onmessage = (event) => {
+        const message = JSON.parse(event.data) as ServerEvent;
+        handleServerEvent(message);
+      };
 
-        const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-        const socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
-        socketRef.current = socket;
-
-        socket.onopen = () => {
-          socket.send(
-            JSON.stringify({
-              type: "start_session",
-              sampleRate: capture.sampleRate,
-              title,
-              includeTabAudio: capture.tabAudioEnabled,
-            })
-          );
-          for (const payload of pendingSocketMessagesRef.current) {
-            socket.send(payload);
-          }
-          pendingSocketMessagesRef.current = [];
-        };
-
-        socket.onmessage = (event) => {
-          const message = JSON.parse(event.data) as ServerEvent;
-          handleServerEvent(message);
-        };
-
-        socket.onclose = () => {
-          setConnectionState("idle");
-          setAudioLevel(0);
-          setIsAsking(false);
-          setStatusMessage((current) => (current === "Session stopped." ? current : "Session closed."));
-          captureRef.current?.stop();
-          captureRef.current = null;
-          socketRef.current = null;
-          pendingSocketMessagesRef.current = [];
-        };
-      })
-      .catch((error: unknown) => {
+      socket.onclose = () => {
         setConnectionState("idle");
         setAudioLevel(0);
-        setStatusMessage(String(error));
-      });
+        setIsAsking(false);
+        setStatusMessage((current) => (current === "Session stopped." ? current : "Session closed."));
+        captureIntentRef.current = "idle";
+        captureForwardingEnabledRef.current = true;
+        captureRequestIdRef.current += 1;
+        captureRef.current?.stop();
+        captureRef.current = null;
+        socketRef.current = null;
+        pendingSocketMessagesRef.current = [];
+      };
+    }, "idle", (capture) =>
+      capture.tabAudioEnabled
+        ? `${selectedMicLabel} is live with tab audio.`
+        : `${selectedMicLabel} is live.`
+    , requestId, "starting");
+  };
+
+  const pauseSession = () => {
+    if (!socketRef.current || !captureRef.current) {
+      return;
+    }
+
+    setConnectionState("pausing");
+    setAudioLevel(0);
+    setStatusMessage("Pausing capture...");
+    captureIntentRef.current = "idle";
+    captureForwardingEnabledRef.current = false;
+    captureRequestIdRef.current += 1;
+    captureRef.current.stop();
+    captureRef.current = null;
+    pauseFlushTimerRef.current = window.setTimeout(() => {
+      pauseFlushTimerRef.current = null;
+      captureForwardingEnabledRef.current = true;
+      flushPendingSocketMessages();
+      queueOrSendSocketMessage(JSON.stringify({ type: "pause_session" }));
+    }, 0);
+  };
+
+  const resumeSession = () => {
+    if (!socketRef.current) {
+      return;
+    }
+
+    setConnectionState("resuming");
+    setAudioLevel(0);
+    setAudioDiagnostics(null);
+    setStatusMessage("Reconnecting microphone...");
+    captureForwardingEnabledRef.current = false;
+    captureIntentRef.current = "resuming";
+    const requestId = captureRequestIdRef.current + 1;
+    captureRequestIdRef.current = requestId;
+    startCapture(() => {
+      queueOrSendSocketMessage(JSON.stringify({ type: "resume_session" }));
+    }, "paused", (capture) =>
+      capture.tabAudioEnabled
+        ? `${selectedMicLabel} is ready with tab audio. Reconnecting transcription...`
+        : `${selectedMicLabel} is ready. Reconnecting transcription...`
+    , requestId, "resuming");
   };
 
   const stopSession = () => {
-    socketRef.current?.send(JSON.stringify({ type: "stop_session" }));
+    captureIntentRef.current = "idle";
+    captureRequestIdRef.current += 1;
+    if (pauseFlushTimerRef.current !== null) {
+      window.clearTimeout(pauseFlushTimerRef.current);
+      pauseFlushTimerRef.current = null;
+    }
     captureRef.current?.stop();
     captureRef.current = null;
     setAudioLevel(0);
+    const socket = socketRef.current;
+    if (!socket) {
+      captureForwardingEnabledRef.current = true;
+      pendingSocketMessagesRef.current = [];
+      setConnectionState("idle");
+      setStatusMessage("Ready when you are.");
+      return;
+    }
+
+    captureForwardingEnabledRef.current = true;
+    flushPendingSocketMessages();
+    socket.send(JSON.stringify({ type: "stop_session" }));
     setConnectionState("stopping");
     setStatusMessage("Finishing the current transcript...");
   };
@@ -248,6 +381,8 @@ export function MeetingBuddyApp() {
 
   const handleServerEvent = (event: ServerEvent) => {
     if (event.type === "session_ready") {
+      captureIntentRef.current = "idle";
+      captureForwardingEnabledRef.current = true;
       setConnectionState("live");
       setNotePathRelative(event.notePathRelative);
       setLogPathRelative(event.logPathRelative);
@@ -306,6 +441,25 @@ export function MeetingBuddyApp() {
       return;
     }
 
+    if (event.type === "session_paused") {
+      captureIntentRef.current = "idle";
+      captureForwardingEnabledRef.current = true;
+      setConnectionState("paused");
+      setAudioLevel(0);
+      setAudioDiagnostics(null);
+      setStatusMessage("Capture paused. Resume when you are ready.");
+      return;
+    }
+
+    if (event.type === "session_resumed") {
+      captureIntentRef.current = "idle";
+      captureForwardingEnabledRef.current = true;
+      flushPendingSocketMessages();
+      setConnectionState("live");
+      setStatusMessage(`Listening live on ${selectedMicLabel}.`);
+      return;
+    }
+
     if (event.type === "answer_delta") {
       answerBufferRef.current += event.delta;
       if (answerFlushTimerRef.current === null) {
@@ -358,7 +512,14 @@ export function MeetingBuddyApp() {
   };
 
   const canStart = connectionState === "idle";
-  const canStop = connectionState === "live" || connectionState === "starting";
+  const canPause = connectionState === "live";
+  const canResume = connectionState === "paused";
+  const canStop =
+    connectionState === "live" ||
+    connectionState === "starting" ||
+    connectionState === "pausing" ||
+    connectionState === "paused" ||
+    connectionState === "resuming";
   const canAsk = connectionState === "live" && !isAsking;
 
   return (
@@ -463,6 +624,22 @@ export function MeetingBuddyApp() {
                     type="button"
                   >
                     Start listening
+                  </button>
+                  <button
+                    className="rounded-full border border-[var(--line)] bg-white/60 px-5 py-3 font-medium text-[var(--foreground)] transition hover:bg-white disabled:opacity-50"
+                    disabled={!canPause}
+                    onClick={pauseSession}
+                    type="button"
+                  >
+                    Pause
+                  </button>
+                  <button
+                    className="rounded-full border border-[var(--line)] bg-white/60 px-5 py-3 font-medium text-[var(--foreground)] transition hover:bg-white disabled:opacity-50"
+                    disabled={!canResume}
+                    onClick={resumeSession}
+                    type="button"
+                  >
+                    Resume
                   </button>
                   <button
                     className="rounded-full border border-[var(--line)] bg-white/60 px-5 py-3 font-medium text-[var(--foreground)] transition hover:bg-white disabled:opacity-50"

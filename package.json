@@ -7,6 +7,7 @@
     "build": "pnpm --filter @realtimebuddy/web build",
     "start": "pnpm --filter @realtimebuddy/web start",
     "lint": "pnpm --filter @realtimebuddy/web lint",
+    "test": "pnpm --filter @realtimebuddy/web test",
     "e2e:validate": "pnpm --filter @realtimebuddy/web e2e:validate"
   }
 }
