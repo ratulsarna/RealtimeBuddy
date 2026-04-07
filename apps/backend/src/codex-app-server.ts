@@ -99,6 +99,22 @@ type PendingTurn = {
   listener: NotificationListener;
 };
 
+type CodexAppServerOptions = {
+  workingDirectory: string;
+};
+
+type ThreadStartParams = {
+  model: string;
+  cwd: string;
+  approvalPolicy: "never";
+  sandbox: "read-only";
+  ephemeral: boolean;
+  experimentalRawEvents: boolean;
+  persistExtendedHistory: boolean;
+  developerInstructions: string;
+  serviceName: "realtimebuddy";
+};
+
 const PREFERRED_MODELS = [
   process.env.CODEX_MODEL ?? "",
   "gpt-5.3-codex-spark",
@@ -114,8 +130,46 @@ function isAgentMessageItem(
   return item.type === "agentMessage";
 }
 
+export function buildQuestionPrompt(options: {
+  context: string;
+  question: string;
+  workingDirectory: string;
+}) {
+  return [
+    "Current live note:",
+    options.context,
+    "",
+    "Obsidian vault working directory:",
+    options.workingDirectory,
+    "",
+    "User question:",
+    options.question,
+    "",
+    "Answer using the transcript and note context above first. When helpful, inspect relevant files in the Obsidian vault rooted at the working directory above. Be concise and direct. If something is uncertain, say that plainly.",
+  ].join("\n");
+}
+
+export async function buildThreadStartParams(options: {
+  modelPromise: Promise<string>;
+  workingDirectory: string;
+}): Promise<ThreadStartParams> {
+  return {
+    model: await options.modelPromise,
+    cwd: options.workingDirectory,
+    approvalPolicy: "never",
+    sandbox: "read-only",
+    ephemeral: true,
+    experimentalRawEvents: false,
+    persistExtendedHistory: false,
+    developerInstructions:
+      "You are RealtimeBuddy, a fast ambient meeting assistant. The thread cwd is an Obsidian vault. Answer from the live meeting context first, but inspect relevant vault files when they help answer the user's question. Be concise and say clearly when the transcript or vault does not support a claim.",
+    serviceName: "realtimebuddy",
+  };
+}
+
 export class CodexAppServer {
   private readonly process: ChildProcessWithoutNullStreams;
+  private readonly workingDirectory: string;
   private readonly pendingRequests = new Map<string, PendingRequest>();
   private readonly notificationListeners = new Set<NotificationListener>();
   private readonly pendingTurns = new Map<string, PendingTurn>();
@@ -123,8 +177,10 @@ export class CodexAppServer {
   private threadIdPromise: Promise<string> | null = null;
   private closedMessage: string | null = null;
 
-  constructor() {
+  constructor(options: CodexAppServerOptions) {
+    this.workingDirectory = options.workingDirectory;
     this.process = spawn("codex", ["app-server", "--listen", "stdio://"], {
+      cwd: this.workingDirectory,
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -175,18 +231,15 @@ export class CodexAppServer {
     const threadId = await this.getThreadId();
     const turn = await this.request<TurnStartResponse>("turn/start", {
       threadId,
+      cwd: this.workingDirectory,
       input: [
         {
           type: "text",
-          text: [
-            "Current live note:",
+          text: buildQuestionPrompt({
             context,
-            "",
-            "User question:",
             question,
-            "",
-            "Answer using the transcript and note context above. Be concise and direct. If something is uncertain, say that plainly.",
-          ].join("\n"),
+            workingDirectory: this.workingDirectory,
+          }),
           text_elements: [],
         },
       ],
@@ -282,17 +335,13 @@ export class CodexAppServer {
   }
 
   private async createThread() {
-    const thread = await this.request<ThreadStartResponse>("thread/start", {
-      model: await this.getSelectedModel(),
-      approvalPolicy: "never",
-      sandbox: "read-only",
-      ephemeral: true,
-      experimentalRawEvents: false,
-      persistExtendedHistory: false,
-      developerInstructions:
-        "You are RealtimeBuddy, a fast ambient meeting assistant. Answer from meeting context first, be concise, and say clearly when the transcript does not support a claim.",
-      serviceName: "realtimebuddy",
-    });
+    const thread = await this.request<ThreadStartResponse>(
+      "thread/start",
+      await buildThreadStartParams({
+        modelPromise: this.getSelectedModel(),
+        workingDirectory: this.workingDirectory,
+      })
+    );
 
     return thread.thread.id;
   }

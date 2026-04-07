@@ -120,7 +120,8 @@ export class MeetingSession {
   private readonly notePathRelative: string;
   private readonly logPath: string;
   private readonly logPathRelative: string;
-  private readonly codex = new CodexAppServer();
+  private readonly codexWorkingDirectory: string;
+  private codex: CodexAppServer | null = null;
   private readonly audioQueue: AudioChunk[] = [];
   private readonly pendingCommitProvisionalIds: string[] = [];
 
@@ -151,6 +152,7 @@ export class MeetingSession {
     this.languageCode = resolveRealtimeLanguageCode(this.languagePreference);
     this.sendEvent = options.sendEvent;
     const safeFileTitle = this.sanitizeTitleForFileName(this.title);
+    this.codexWorkingDirectory = process.env.CODEX_VAULT_PATH?.trim() || this.vaultPath;
 
     const noteFolder = path.join(this.vaultPath, "Notes", "Dated", this.dateStamp(this.startedAt));
     const noteFileName = `${safeFileTitle} - ${this.fileStamp(this.startedAt)}.md`;
@@ -166,6 +168,12 @@ export class MeetingSession {
   async start() {
     await mkdir(path.dirname(this.notePath), { recursive: true });
     await mkdir(path.dirname(this.logPath), { recursive: true });
+    await mkdir(this.codexWorkingDirectory, { recursive: true });
+    if (!this.codex) {
+      this.codex = new CodexAppServer({
+        workingDirectory: this.codexWorkingDirectory,
+      });
+    }
     await this.writeNote();
     await this.logEvent("session_started", {
       notePath: this.notePathRelative,
@@ -174,6 +182,7 @@ export class MeetingSession {
       sampleRate: this.sampleRate,
       languagePreference: this.languagePreference,
       languageCode: this.languageCode ?? "auto",
+      codexWorkingDirectory: this.codexWorkingDirectory,
     });
 
     this.ensureElevenLabsConnected();
@@ -260,7 +269,7 @@ export class MeetingSession {
       });
 
       const context = this.buildQuestionContext();
-      const text = await this.codex.askQuestion(question, context, (delta) => {
+      const text = await this.codex?.askQuestion(question, context, (delta) => {
         answer += delta;
         pendingAnswerDelta += delta;
         if (answerDeltaTimer === null) {
@@ -403,7 +412,7 @@ export class MeetingSession {
     this.stopped = true;
     await this.commitTranscript();
     this.closeElevenLabs();
-    this.codex.close();
+    this.codex?.close();
     await this.writeNote();
     await this.logEvent("session_stopped", {
       transcriptSegments: this.transcriptSegments.length,
@@ -527,6 +536,12 @@ export class MeetingSession {
     if (!this.codexStartupPromise) {
       this.codexStartupPromise = (async () => {
         try {
+          if (!this.codex) {
+            this.codex = new CodexAppServer({
+              workingDirectory: this.codexWorkingDirectory,
+            });
+          }
+
           await this.codex.ready();
           const model = await this.codex.getSelectedModel();
           this.codexModel = model;

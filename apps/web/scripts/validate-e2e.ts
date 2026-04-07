@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { chromium } from "playwright";
@@ -7,12 +7,20 @@ const APP_URL = process.env.APP_URL ?? "http://localhost:3000";
 const FAKE_AUDIO_PATH = process.env.FAKE_AUDIO_PATH ?? "/tmp/realtimebuddy-e2e.wav";
 const VAULT_PATH =
   process.env.OBSIDIAN_VAULT_PATH ?? "/Users/ratulsarna/Vault/ObsidianVault";
+const CODEX_VAULT_PATH = process.env.CODEX_VAULT_PATH ?? VAULT_PATH;
 const BACKEND_OUTPUT_PATH =
   process.env.BACKEND_OUTPUT_PATH ??
   path.resolve(process.cwd(), "..", "backend", "output", "session-logs");
 const title = `E2E Validation ${new Date().toISOString().slice(11, 19).replaceAll(":", "-")}`;
+const VAULT_FIXTURE_PATH = path.join(
+  CODEX_VAULT_PATH,
+  ".realtimebuddy-e2e",
+  `${title} Codex Context.md`
+);
 
 async function main() {
+  await seedVaultFixture();
+
   const browser = await chromium.launch({
     headless: true,
     args: [
@@ -128,6 +136,21 @@ async function main() {
     { timeout: 90_000 }
   );
 
+  await page
+    .getByRole("textbox", { name: "What did we decide about deadlines?" })
+    .fill(`Check the vault file for ${title} and tell me the exact launch mascot.`);
+
+  await page.getByRole("button", { name: "Ask now" }).click();
+
+  await page.waitForFunction(
+    () => {
+      const text = document.body.innerText.toLowerCase();
+      return text.includes("2 answers") && text.includes("lantern otter");
+    },
+    undefined,
+    { timeout: 90_000 }
+  );
+
   await mkdir("output/playwright", { recursive: true });
   await page.screenshot({
     path: "output/playwright/realtimebuddy-e2e.png",
@@ -159,6 +182,22 @@ async function readLatestNote() {
   const notePath = path.join(noteDir, matching[matching.length - 1]);
   console.log(`Validated note: ${notePath}`);
   return await readFile(notePath, "utf8");
+}
+
+async function seedVaultFixture() {
+  await mkdir(path.dirname(VAULT_FIXTURE_PATH), { recursive: true });
+  await writeFile(
+    VAULT_FIXTURE_PATH,
+    [
+      "# RAT-214 Codex Context",
+      "",
+      "This fixture exists so automated validation can confirm the Codex thread is rooted in the Obsidian vault.",
+      `The session title for this fixture is ${title}.`,
+      "The exact launch mascot is Lantern Otter.",
+      "",
+    ].join("\n"),
+    "utf8"
+  );
 }
 
 async function waitForExpectedNote() {
@@ -211,6 +250,7 @@ function hasExpectedContent(note: string) {
     normalized.includes("friday") &&
     normalized.includes("ratul") &&
     normalized.includes("after the pause") &&
+    normalized.includes("lantern otter") &&
     normalized.includes("when is the launch and who owns the demo?") &&
     !note.includes("- Waiting for the first committed transcript.") &&
     !note.includes("- Transcript has not started yet.")
