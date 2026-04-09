@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RealtimeBuddy Recorder</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4efe6;
+        --ink: #1a1713;
+        --soft: #6b5a4b;
+        --line: rgba(69, 47, 28, 0.12);
+        --accent: #d7673f;
+        --accent-soft: #f2c8b3;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        width: 380px;
+        margin: 0;
+        padding: 16px;
+        background: linear-gradient(180deg, #f7f1e8 0%, #efe6d8 100%);
+        color: var(--ink);
+        font:
+          14px/1.45 "Space Grotesk",
+          system-ui,
+          sans-serif;
+      }
+
+      h1 {
+        margin: 0 0 10px;
+        font-size: 20px;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: rgba(255, 251, 245, 0.86);
+        padding: 14px;
+      }
+
+      .label {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        color: var(--soft);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+
+      input,
+      select,
+      button {
+        font: inherit;
+      }
+
+      input,
+      select {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px 12px;
+        background: white;
+        color: var(--ink);
+      }
+
+      button {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 10px 14px;
+        background: white;
+        color: var(--ink);
+        cursor: pointer;
+      }
+
+      button.primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: white;
+      }
+
+      button:disabled {
+        cursor: default;
+        opacity: 0.5;
+      }
+
+      .row {
+        display: flex;
+        gap: 8px;
+      }
+
+      .row > * {
+        flex: 1;
+      }
+
+      .meta {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px 12px;
+        font-size: 12px;
+        color: var(--soft);
+      }
+
+      .meta strong {
+        display: block;
+        color: var(--ink);
+        font-size: 13px;
+        margin-top: 2px;
+        word-break: break-word;
+      }
+
+      .warning {
+        border-radius: 14px;
+        background: rgba(215, 103, 63, 0.12);
+        color: #8b3f1f;
+        padding: 10px 12px;
+      }
+
+      .checkbox {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--ink);
+        font-size: 13px;
+        text-transform: none;
+        letter-spacing: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stack">
+      <div class="panel">
+        <h1>RealtimeBuddy Recorder</h1>
+        <p>Use the extension for tab + mic capture, then keep the companion web app open for live Q&amp;A.</p>
+      </div>
+
+      <div class="panel stack">
+        <label class="label">
+          Companion App URL
+          <input id="appUrl" placeholder="https://buddy.example.com" />
+        </label>
+
+        <label class="label">
+          Backend Base URL
+          <input id="backendBaseUrl" placeholder="optional override" />
+        </label>
+
+        <div class="row">
+          <label class="label">
+            Microphone
+            <select id="micDevice"></select>
+          </label>
+
+          <label class="label">
+            Language
+            <select id="language">
+              <option value="auto">Auto detect</option>
+              <option value="english">English</option>
+              <option value="hindi">Hindi</option>
+              <option value="hinglish">Hinglish</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="checkbox">
+          <input id="autoOpenCompanion" type="checkbox" />
+          Open the companion tab automatically once capture starts
+        </label>
+
+        <div class="row">
+          <button id="save">Save</button>
+          <button id="refreshMics">Refresh mics</button>
+          <button id="enableMic">Enable mic</button>
+        </div>
+      </div>
+
+      <div class="panel stack">
+        <div class="row">
+          <button class="primary" id="start">Start capture</button>
+          <button id="stop">Stop</button>
+          <button id="openCompanion">Open companion</button>
+        </div>
+        <div id="warning" class="warning" hidden></div>
+        <div class="meta">
+          <div>
+            Status
+            <strong id="status">Idle</strong>
+          </div>
+          <div>
+            Recording
+            <strong id="isRecording">no</strong>
+          </div>
+          <div>
+            Session ID
+            <strong id="sessionId">-</strong>
+          </div>
+          <div>
+            Companion URL
+            <strong id="companionUrl">-</strong>
+          </div>
+          <div>
+            Audio mode
+            <strong id="audioMode">-</strong>
+          </div>
+          <div>
+            Mic
+            <strong id="micEnabled">-</strong>
+          </div>
+          <div>
+            Tab dB
+            <strong id="tabLevel">-</strong>
+          </div>
+          <div>
+            Mic dB
+            <strong id="micLevel">-</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+  </html>

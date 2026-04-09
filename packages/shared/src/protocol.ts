@@ -1,12 +1,22 @@
 import type { SessionLanguagePreference } from "./language-preferences";
 
+export type SessionRole = "capture" | "companion";
+export type SessionCaptureState = "live" | "paused" | "stopped";
+
 export type ClientEvent =
   | {
       type: "start_session";
+      sessionId?: string;
+      role?: SessionRole;
       sampleRate: number;
       title: string;
       includeTabAudio: boolean;
       languagePreference: SessionLanguagePreference;
+    }
+  | {
+      type: "join_session";
+      sessionId: string;
+      role?: SessionRole;
     }
   | {
       type: "audio_chunk";
@@ -45,6 +55,9 @@ export type ServerEvent =
   | {
       type: "session_ready";
       sessionId: string;
+      title: string;
+      includeTabAudio: boolean;
+      languagePreference: SessionLanguagePreference;
       notePath: string;
       notePathRelative: string;
       logPath: string;
@@ -56,7 +69,43 @@ export type ServerEvent =
       model: string;
     }
   | {
+      type: "session_snapshot";
+      sessionId: string;
+      title: string;
+      includeTabAudio: boolean;
+      languagePreference: SessionLanguagePreference;
+      notePath: string;
+      notePathRelative: string;
+      logPath: string;
+      logPathRelative: string;
+      model: string;
+      partialTranscript: string;
+      provisionalEntries: Array<{
+        id: string;
+        text: string;
+        provisionalAt: string;
+      }>;
+      transcriptEntries: Array<{
+        text: string;
+        committedAt: string;
+      }>;
+      questionAnswers: Array<{
+        question: string;
+        answer: string;
+        askedAt: string;
+      }>;
+      markdown: string;
+      captureState: SessionCaptureState;
+      statusMessage: string;
+      captureClients: number;
+      companionClients: number;
+    }
+  | {
       type: "status";
+      message: string;
+    }
+  | {
+      type: "capture_client_disconnected";
       message: string;
     }
   | {

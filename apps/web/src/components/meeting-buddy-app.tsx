@@ -30,6 +30,7 @@ type CommittedTranscriptEntry = {
 type QuestionAnswer = {
   question: string;
   answer: string;
+  askedAt?: string;
 };
 
 type AudioDiagnostics = {
@@ -44,16 +45,31 @@ type AudioDiagnostics = {
 };
 
 type CaptureIntent = "idle" | "starting" | "resuming";
-type ConnectionState = "idle" | "starting" | "live" | "pausing" | "paused" | "resuming" | "stopping";
+type SessionMode = "local_capture" | "companion" | null;
+type ConnectionState =
+  | "idle"
+  | "connecting"
+  | "starting"
+  | "live"
+  | "paused"
+  | "resuming"
+  | "stopping";
 
 type MeetingBuddyAppProps = {
   backendBaseUrl?: string;
 };
 
+function formatAskedAt(askedAt?: string) {
+  return askedAt ? ` at ${askedAt}` : "";
+}
+
 export function MeetingBuddyApp({
   backendBaseUrl = "",
 }: MeetingBuddyAppProps) {
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
+  const [sessionMode, setSessionMode] = useState<SessionMode>(null);
+  const [sessionId, setSessionId] = useState("");
+  const [sessionIdInput, setSessionIdInput] = useState("");
   const [includeTabAudio, setIncludeTabAudio] = useState(false);
   const [languagePreference, setLanguagePreference] = useState<SessionLanguagePreference>("auto");
   const [title, setTitle] = useState("Meeting Buddy");
@@ -72,6 +88,8 @@ export function MeetingBuddyApp({
   const [currentAnswer, setCurrentAnswer] = useState("");
   const [questionAnswers, setQuestionAnswers] = useState<QuestionAnswer[]>([]);
   const [audioDiagnostics, setAudioDiagnostics] = useState<AudioDiagnostics | null>(null);
+  const [captureClientCount, setCaptureClientCount] = useState(0);
+  const [companionClientCount, setCompanionClientCount] = useState(0);
   const [isAsking, setIsAsking] = useState(false);
 
   const socketRef = useRef<WebSocket | null>(null);
@@ -84,6 +102,25 @@ export function MeetingBuddyApp({
   const captureRequestIdRef = useRef(0);
   const captureIntentRef = useRef<CaptureIntent>("idle");
   const captureForwardingEnabledRef = useRef(true);
+  const autoJoinAttemptedRef = useRef(false);
+  const joinSessionRef = useRef<(targetSessionId?: string) => Promise<void>>(async () => undefined);
+  const statusMessageRef = useRef("Ready when you are.");
+  const closeMessageRef = useRef<string | null>(null);
+  const sessionModeRef = useRef<SessionMode>(null);
+  const connectionStateRef = useRef<ConnectionState>("idle");
+  const captureDisconnectedRef = useRef(false);
+
+  useEffect(() => {
+    statusMessageRef.current = statusMessage;
+  }, [statusMessage]);
+
+  useEffect(() => {
+    sessionModeRef.current = sessionMode;
+  }, [sessionMode]);
+
+  useEffect(() => {
+    connectionStateRef.current = connectionState;
+  }, [connectionState]);
 
   useEffect(() => {
     if (window.location.hostname === "0.0.0.0") {
@@ -99,6 +136,11 @@ export function MeetingBuddyApp({
         setMicrophones(devices);
       });
     };
+
+    const querySessionId = new URL(window.location.href).searchParams.get("session")?.trim() ?? "";
+    if (querySessionId) {
+      setSessionIdInput(querySessionId);
+    }
 
     refreshMicrophones();
     mediaDevices?.addEventListener("devicechange", refreshMicrophones);
@@ -124,6 +166,46 @@ export function MeetingBuddyApp({
     microphones.find((device) => device.deviceId === selectedMicId)?.label ||
     "Browser default microphone";
   const backendTargetLabel = backendBaseUrl.replace(/\/$/, "") || "current host:3001";
+  const sessionModeLabel =
+    sessionMode === "local_capture"
+      ? "local capture"
+      : sessionMode === "companion"
+        ? "companion"
+        : "detached";
+
+  const syncSessionQuery = (nextSessionId: string) => {
+    const url = new URL(window.location.href);
+    if (nextSessionId) {
+      url.searchParams.set("session", nextSessionId);
+    } else {
+      url.searchParams.delete("session");
+    }
+    window.history.replaceState(null, "", url.toString());
+  };
+
+  const resetLiveState = () => {
+    setAudioLevel(0);
+    setPartialTranscript("");
+    setProvisionalEntries([]);
+    setTranscriptEntries([]);
+    setQuestionAnswers([]);
+    setCurrentAnswer("");
+    setIsAsking(false);
+    setNoteMarkdown("");
+    setNotePathRelative("");
+    setLogPathRelative("");
+    setAudioDiagnostics(null);
+    setModelName("");
+    setCaptureClientCount(0);
+    setCompanionClientCount(0);
+    captureDisconnectedRef.current = false;
+    answerBufferRef.current = "";
+    pendingQuestionRef.current = "";
+    if (answerFlushTimerRef.current !== null) {
+      window.clearTimeout(answerFlushTimerRef.current);
+      answerFlushTimerRef.current = null;
+    }
+  };
 
   const queueOrSendSocketMessage = (payload: string) => {
     const socket = socketRef.current;
@@ -207,7 +289,7 @@ export function MeetingBuddyApp({
           })
         );
       },
-      })
+    })
       .then((capture) => {
         if (!isCurrentCaptureRequest(requestId, expectedIntent)) {
           capture.stop();
@@ -233,95 +315,6 @@ export function MeetingBuddyApp({
       });
   };
 
-  const startSession = () => {
-    setConnectionState("starting");
-    setAudioLevel(0);
-    setPartialTranscript("");
-    setProvisionalEntries([]);
-    setTranscriptEntries([]);
-    setQuestionAnswers([]);
-    setCurrentAnswer("");
-    setIsAsking(false);
-    setNoteMarkdown("");
-    setNotePathRelative("");
-    setLogPathRelative("");
-    setAudioDiagnostics(null);
-    setStatusMessage("Requesting microphone access...");
-    answerBufferRef.current = "";
-    pendingQuestionRef.current = "";
-    if (answerFlushTimerRef.current !== null) {
-      window.clearTimeout(answerFlushTimerRef.current);
-      answerFlushTimerRef.current = null;
-    }
-    if (pauseFlushTimerRef.current !== null) {
-      window.clearTimeout(pauseFlushTimerRef.current);
-      pauseFlushTimerRef.current = null;
-    }
-    pendingSocketMessagesRef.current = [];
-    captureForwardingEnabledRef.current = true;
-    captureIntentRef.current = "starting";
-    const requestId = captureRequestIdRef.current + 1;
-    captureRequestIdRef.current = requestId;
-
-    startCapture(async (capture) => {
-      try {
-        const backendAccessToken = await requestBackendAccessToken();
-        const { webSocketUrl } = resolveBrowserBackendConfig({
-          backendAccessToken,
-          backendBaseUrl,
-          pageUrl: window.location.href,
-        });
-        const socket = new WebSocket(webSocketUrl);
-        socketRef.current = socket;
-
-        socket.onopen = () => {
-          socket.send(
-            JSON.stringify({
-              type: "start_session",
-              sampleRate: capture.sampleRate,
-              title,
-              includeTabAudio: capture.tabAudioEnabled,
-              languagePreference,
-            })
-          );
-          flushPendingSocketMessages();
-        };
-
-        socket.onmessage = (event) => {
-          const message = JSON.parse(event.data) as ServerEvent;
-          handleServerEvent(message);
-        };
-
-        socket.onclose = () => {
-          setConnectionState("idle");
-          setAudioLevel(0);
-          setIsAsking(false);
-          setStatusMessage((current) => (current === "Session stopped." ? current : "Session closed."));
-          captureIntentRef.current = "idle";
-          captureForwardingEnabledRef.current = true;
-          captureRequestIdRef.current += 1;
-          captureRef.current?.stop();
-          captureRef.current = null;
-          socketRef.current = null;
-          pendingSocketMessagesRef.current = [];
-        };
-      } catch (error) {
-        capture.stop();
-        captureRef.current = null;
-        captureIntentRef.current = "idle";
-        captureForwardingEnabledRef.current = true;
-        captureRequestIdRef.current += 1;
-        setConnectionState("idle");
-        setAudioLevel(0);
-        setStatusMessage(String(error));
-      }
-    }, "idle", (capture) =>
-      capture.tabAudioEnabled
-        ? `${selectedMicLabel} is live with tab audio.`
-        : `${selectedMicLabel} is live.`
-    , requestId, "starting");
-  };
-
   const requestBackendAccessToken = async () => {
     const response = await fetch("/api/backend-auth", {
       cache: "no-store",
@@ -338,12 +331,153 @@ export function MeetingBuddyApp({
     return payload.token;
   };
 
-  const pauseSession = () => {
-    if (!socketRef.current || !captureRef.current) {
+  const connectSocket = async (initialMessage: Record<string, unknown>) => {
+    const backendAccessToken = await requestBackendAccessToken();
+    const { webSocketUrl } = resolveBrowserBackendConfig({
+      backendAccessToken,
+      backendBaseUrl,
+      pageUrl: window.location.href,
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const socket = new WebSocket(webSocketUrl);
+      socketRef.current = socket;
+
+      socket.onopen = () => {
+        socket.send(JSON.stringify(initialMessage));
+        flushPendingSocketMessages();
+        resolve();
+      };
+
+      socket.onmessage = (event) => {
+        const message = JSON.parse(event.data) as ServerEvent;
+        handleServerEvent(message);
+      };
+
+      socket.onerror = () => {
+        reject(new Error("Could not open the backend websocket."));
+      };
+
+      socket.onclose = () => {
+        const nextMessage =
+          closeMessageRef.current ??
+          (statusMessageRef.current === "Session stopped."
+            ? "Session stopped."
+            : "Session disconnected.");
+        closeMessageRef.current = null;
+        captureIntentRef.current = "idle";
+        captureForwardingEnabledRef.current = true;
+        captureRequestIdRef.current += 1;
+        captureRef.current?.stop();
+        captureRef.current = null;
+        socketRef.current = null;
+        pendingSocketMessagesRef.current = [];
+        setIsAsking(false);
+        setCurrentAnswer("");
+        answerBufferRef.current = "";
+        setConnectionState("idle");
+        setSessionMode(null);
+        setCaptureClientCount(0);
+        setCompanionClientCount(0);
+        setStatusMessage(nextMessage);
+        syncSessionQuery("");
+      };
+    });
+  };
+
+  const startSession = () => {
+    resetLiveState();
+    setConnectionState("starting");
+    setSessionMode("local_capture");
+    setSessionId("");
+    setStatusMessage("Requesting microphone access...");
+    pendingSocketMessagesRef.current = [];
+    captureForwardingEnabledRef.current = true;
+    captureIntentRef.current = "starting";
+    const requestId = captureRequestIdRef.current + 1;
+    captureRequestIdRef.current = requestId;
+
+    startCapture(
+      async (capture) => {
+        try {
+          await connectSocket({
+            type: "start_session",
+            role: "capture",
+            sampleRate: capture.sampleRate,
+            title,
+            includeTabAudio: capture.tabAudioEnabled,
+            languagePreference,
+          });
+        } catch (error) {
+          capture.stop();
+          captureRef.current = null;
+          captureIntentRef.current = "idle";
+          captureForwardingEnabledRef.current = true;
+          captureRequestIdRef.current += 1;
+          setConnectionState("idle");
+          setSessionMode(null);
+          setAudioLevel(0);
+          setStatusMessage(String(error));
+        }
+      },
+      "idle",
+      (capture) =>
+        capture.tabAudioEnabled
+          ? `${selectedMicLabel} is live with tab audio.`
+          : `${selectedMicLabel} is live.`,
+      requestId,
+      "starting"
+    );
+  };
+
+  const joinSession = async (targetSessionId = sessionIdInput.trim()) => {
+    if (!targetSessionId) {
       return;
     }
 
-    setConnectionState("pausing");
+    resetLiveState();
+    setConnectionState("connecting");
+    setSessionMode("companion");
+    setSessionId(targetSessionId);
+    setSessionIdInput(targetSessionId);
+    setStatusMessage("Connecting to the live session...");
+
+    try {
+      await connectSocket({
+        type: "join_session",
+        role: "companion",
+        sessionId: targetSessionId,
+      });
+    } catch (error) {
+      socketRef.current?.close();
+      socketRef.current = null;
+      setConnectionState("idle");
+      setSessionMode(null);
+      setStatusMessage(String(error));
+    }
+  };
+
+  joinSessionRef.current = joinSession;
+
+  useEffect(() => {
+    if (autoJoinAttemptedRef.current) {
+      return;
+    }
+
+    if (connectionState !== "idle" || !sessionIdInput.trim()) {
+      return;
+    }
+
+    autoJoinAttemptedRef.current = true;
+    void joinSessionRef.current(sessionIdInput.trim());
+  }, [connectionState, sessionIdInput]);
+
+  const pauseSession = () => {
+    if (!socketRef.current || !captureRef.current || sessionMode !== "local_capture") {
+      return;
+    }
+
+    setConnectionState("paused");
     setAudioLevel(0);
     setStatusMessage("Pausing capture...");
     captureIntentRef.current = "idle";
@@ -360,7 +494,7 @@ export function MeetingBuddyApp({
   };
 
   const resumeSession = () => {
-    if (!socketRef.current) {
+    if (!socketRef.current || sessionMode !== "local_capture") {
       return;
     }
 
@@ -372,16 +506,27 @@ export function MeetingBuddyApp({
     captureIntentRef.current = "resuming";
     const requestId = captureRequestIdRef.current + 1;
     captureRequestIdRef.current = requestId;
-    startCapture(() => {
-      queueOrSendSocketMessage(JSON.stringify({ type: "resume_session" }));
-    }, "paused", (capture) =>
-      capture.tabAudioEnabled
-        ? `${selectedMicLabel} is ready with tab audio. Reconnecting transcription...`
-        : `${selectedMicLabel} is ready. Reconnecting transcription...`
-    , requestId, "resuming");
+    startCapture(
+      () => {
+        queueOrSendSocketMessage(JSON.stringify({ type: "resume_session" }));
+      },
+      "paused",
+      (capture) =>
+        capture.tabAudioEnabled
+          ? `${selectedMicLabel} is ready with tab audio. Reconnecting transcription...`
+          : `${selectedMicLabel} is ready. Reconnecting transcription...`,
+      requestId,
+      "resuming"
+    );
   };
 
   const stopSession = () => {
+    if (sessionMode === "companion") {
+      closeMessageRef.current = "Disconnected from the live session.";
+      socketRef.current?.close();
+      return;
+    }
+
     captureIntentRef.current = "idle";
     captureRequestIdRef.current += 1;
     if (pauseFlushTimerRef.current !== null) {
@@ -396,7 +541,9 @@ export function MeetingBuddyApp({
       captureForwardingEnabledRef.current = true;
       pendingSocketMessagesRef.current = [];
       setConnectionState("idle");
+      setSessionMode(null);
       setStatusMessage("Ready when you are.");
+      syncSessionQuery("");
       return;
     }
 
@@ -407,34 +554,90 @@ export function MeetingBuddyApp({
     setStatusMessage("Finishing the current transcript...");
   };
 
-  const sendQuestion = () => {
-    const trimmedQuestion = question.trim();
-    if (!trimmedQuestion || !socketRef.current) {
+  const copySessionId = async () => {
+    if (!sessionId) {
       return;
     }
 
-    pendingQuestionRef.current = trimmedQuestion;
-    setIsAsking(true);
-    setCurrentAnswer("");
-    answerBufferRef.current = "";
-    socketRef.current.send(
-      JSON.stringify({
-        type: "ask",
-        question: trimmedQuestion,
-      })
-    );
-    setQuestion("");
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      setStatusMessage("Session ID copied to the clipboard.");
+    } catch {
+      setStatusMessage("Could not copy the session ID.");
+    }
   };
 
   const handleServerEvent = (event: ServerEvent) => {
     if (event.type === "session_ready") {
       captureIntentRef.current = "idle";
       captureForwardingEnabledRef.current = true;
-      setConnectionState("live");
+      captureDisconnectedRef.current = false;
+      setSessionId(event.sessionId);
+      setSessionIdInput(event.sessionId);
+      setTitle(event.title);
+      setIncludeTabAudio(event.includeTabAudio);
+      setLanguagePreference(event.languagePreference);
+      syncSessionQuery(event.sessionId);
+      if (sessionModeRef.current === "local_capture") {
+        setConnectionState("live");
+        setStatusMessage(`Listening live on ${selectedMicLabel}.`);
+      } else {
+        setStatusMessage(`Connected to live session ${event.sessionId}.`);
+      }
       setNotePathRelative(event.notePathRelative);
       setLogPathRelative(event.logPathRelative);
       setModelName(event.model);
-      setStatusMessage(`Listening live on ${selectedMicLabel}.`);
+      return;
+    }
+
+    if (event.type === "session_snapshot") {
+      setSessionId(event.sessionId);
+      setSessionIdInput(event.sessionId);
+      setTitle(event.title);
+      setIncludeTabAudio(event.includeTabAudio);
+      setLanguagePreference(event.languagePreference);
+      setNotePathRelative(event.notePathRelative);
+      setLogPathRelative(event.logPathRelative);
+      setModelName(event.model);
+      setPartialTranscript(event.partialTranscript);
+      setProvisionalEntries(
+        event.provisionalEntries.map((entry) => ({
+          id: entry.id,
+          text: entry.text,
+          at: entry.provisionalAt,
+        }))
+      );
+      setTranscriptEntries(
+        event.transcriptEntries
+          .map((entry) => ({
+            text: entry.text,
+            at: entry.committedAt,
+          }))
+          .reverse()
+      );
+      setQuestionAnswers(
+        event.questionAnswers.map((entry) => ({
+          question: entry.question,
+          answer: entry.answer,
+          askedAt: entry.askedAt,
+        }))
+      );
+      setNoteMarkdown(event.markdown);
+      setCaptureClientCount(event.captureClients);
+      setCompanionClientCount(event.companionClients);
+      if (event.captureClients > 0) {
+        captureDisconnectedRef.current = false;
+      }
+      if (!(captureDisconnectedRef.current && event.captureClients === 0 && sessionModeRef.current === "companion")) {
+        setStatusMessage(event.statusMessage);
+      }
+      if (event.captureState === "paused") {
+        setConnectionState("paused");
+      } else if (event.captureState === "stopped") {
+        setConnectionState("idle");
+      } else {
+        setConnectionState("live");
+      }
       return;
     }
 
@@ -448,6 +651,13 @@ export function MeetingBuddyApp({
       return;
     }
 
+    if (event.type === "capture_client_disconnected") {
+      captureDisconnectedRef.current = true;
+      setCaptureClientCount(0);
+      setStatusMessage(event.message);
+      return;
+    }
+
     if (event.type === "transcript_partial") {
       setPartialTranscript(event.text);
       return;
@@ -456,7 +666,7 @@ export function MeetingBuddyApp({
     if (event.type === "transcript_provisional") {
       setPartialTranscript("");
       setProvisionalEntries((current) => [
-        ...current,
+        ...current.filter((entry) => entry.id !== event.provisionalId),
         {
           id: event.provisionalId,
           text: event.text,
@@ -494,16 +704,25 @@ export function MeetingBuddyApp({
       setConnectionState("paused");
       setAudioLevel(0);
       setAudioDiagnostics(null);
-      setStatusMessage("Capture paused. Resume when you are ready.");
+      setStatusMessage(
+        sessionModeRef.current === "local_capture"
+          ? "Capture paused. Resume when you are ready."
+          : "Capture paused on the active recording source."
+      );
       return;
     }
 
     if (event.type === "session_resumed") {
       captureIntentRef.current = "idle";
       captureForwardingEnabledRef.current = true;
+      captureDisconnectedRef.current = false;
       flushPendingSocketMessages();
       setConnectionState("live");
-      setStatusMessage(`Listening live on ${selectedMicLabel}.`);
+      setStatusMessage(
+        sessionModeRef.current === "local_capture"
+          ? `Listening live on ${selectedMicLabel}.`
+          : "Capture resumed on the active recording source."
+      );
       return;
     }
 
@@ -545,29 +764,56 @@ export function MeetingBuddyApp({
       answerBufferRef.current = "";
       setCurrentAnswer("");
       setIsAsking(false);
+      if (sessionModeRef.current === "companion" && connectionStateRef.current === "connecting") {
+        closeMessageRef.current = event.message;
+        socketRef.current?.close();
+      }
       setStatusMessage(event.message);
       return;
     }
 
     if (event.type === "session_stopped") {
+      closeMessageRef.current = "Session stopped.";
       setConnectionState("idle");
+      setSessionMode(null);
       setIsAsking(false);
       setStatusMessage("Session stopped.");
+      setCaptureClientCount(0);
+      setCompanionClientCount(0);
+      syncSessionQuery("");
       socketRef.current?.close();
       socketRef.current = null;
     }
   };
 
+  const sendQuestion = () => {
+    const trimmedQuestion = question.trim();
+    if (!trimmedQuestion || !socketRef.current) {
+      return;
+    }
+
+    pendingQuestionRef.current = trimmedQuestion;
+    setIsAsking(true);
+    setCurrentAnswer("");
+    answerBufferRef.current = "";
+    socketRef.current.send(
+      JSON.stringify({
+        type: "ask",
+        question: trimmedQuestion,
+      })
+    );
+    setQuestion("");
+  };
+
   const canStart = connectionState === "idle";
-  const canPause = connectionState === "live";
-  const canResume = connectionState === "paused";
-  const canStop =
-    connectionState === "live" ||
-    connectionState === "starting" ||
-    connectionState === "pausing" ||
-    connectionState === "paused" ||
-    connectionState === "resuming";
-  const canAsk = connectionState === "live" && !isAsking;
+  const canJoin = connectionState === "idle" && Boolean(sessionIdInput.trim());
+  const canPause = sessionMode === "local_capture" && connectionState === "live";
+  const canResume = sessionMode === "local_capture" && connectionState === "paused";
+  const canStop = connectionState !== "idle";
+  const canAsk =
+    Boolean(socketRef.current) &&
+    !isAsking &&
+    (connectionState === "live" || connectionState === "paused");
 
   return (
     <main className="grain relative min-h-screen overflow-hidden px-4 py-5 md:px-8 md:py-8">
@@ -579,30 +825,28 @@ export function MeetingBuddyApp({
                 Ambient Meeting Companion
               </p>
               <h1 className="mt-3 text-4xl font-semibold tracking-tight text-[var(--foreground)] md:text-6xl">
-                Press once. Listen live. Ask while the meeting is still moving.
+                Record from the browser or extension. Keep the live Q&A tab open either way.
               </h1>
               <p className="mt-4 max-w-2xl text-base leading-7 text-[var(--ink-soft)] md:text-lg">
-                RealtimeBuddy streams your meeting audio into live notes in Obsidian and keeps a fast
-                Codex thread warm for near realtime questions.
+                RealtimeBuddy now supports a shared live session model: one capture source can stream audio
+                while another browser tab stays attached for note review and live questions.
               </p>
             </div>
             <div className="rounded-[1.75rem] border border-[var(--line)] bg-[var(--panel-strong)] px-5 py-4 shadow-[0_12px_30px_rgba(69,47,28,0.06)]">
-              <p className="mono text-xs uppercase tracking-[0.28em] text-[var(--ink-soft)]">
-                Status
-              </p>
+              <p className="mono text-xs uppercase tracking-[0.28em] text-[var(--ink-soft)]">Status</p>
               <p className="mt-2 text-lg font-medium">{statusMessage}</p>
               <div className="mt-3 flex flex-wrap gap-2 text-sm text-[var(--ink-soft)]">
-                <span className="rounded-full bg-[var(--accent-soft)] px-3 py-1">
-                  {connectionState}
-                </span>
+                <span className="rounded-full bg-[var(--accent-soft)] px-3 py-1">{connectionState}</span>
+                <span className="rounded-full border border-[var(--line)] px-3 py-1">{sessionModeLabel}</span>
+                {sessionId ? (
+                  <span className="rounded-full border border-[var(--line)] px-3 py-1">session {sessionId}</span>
+                ) : null}
                 {modelName ? (
                   <span className="rounded-full border border-[var(--line)] px-3 py-1">{modelName}</span>
                 ) : null}
-                {backendTargetLabel ? (
-                  <span className="rounded-full border border-[var(--line)] px-3 py-1">
-                    backend {backendTargetLabel}
-                  </span>
-                ) : null}
+                <span className="rounded-full border border-[var(--line)] px-3 py-1">
+                  backend {backendTargetLabel}
+                </span>
                 {notePathRelative ? (
                   <span className="rounded-full border border-[var(--line)] px-3 py-1">{notePathRelative}</span>
                 ) : null}
@@ -611,6 +855,12 @@ export function MeetingBuddyApp({
                 ) : null}
                 <span className="rounded-full border border-[var(--line)] px-3 py-1">
                   {getSessionLanguageLabel(languagePreference)}
+                </span>
+                <span className="rounded-full border border-[var(--line)] px-3 py-1">
+                  capture {captureClientCount}
+                </span>
+                <span className="rounded-full border border-[var(--line)] px-3 py-1">
+                  companions {companionClientCount}
                 </span>
                 {audioDiagnostics ? (
                   <span className="rounded-full border border-[var(--line)] px-3 py-1">
@@ -690,6 +940,41 @@ export function MeetingBuddyApp({
                 </div>
               </div>
 
+              <div className="grid gap-4 md:grid-cols-[1fr_auto_auto]">
+                <label className="flex flex-col gap-2">
+                  <span className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
+                    Companion Session ID
+                  </span>
+                  <input
+                    className="rounded-2xl border border-[var(--line)] bg-white/70 px-4 py-3 outline-none transition focus:border-[var(--accent)]"
+                    disabled={!canStart}
+                    value={sessionIdInput}
+                    onChange={(event) => setSessionIdInput(event.target.value)}
+                    placeholder="Paste an extension-owned session ID"
+                  />
+                </label>
+                <button
+                  className="rounded-full border border-[var(--line)] bg-white/60 px-5 py-3 font-medium text-[var(--foreground)] transition hover:bg-white disabled:opacity-50"
+                  disabled={!canJoin}
+                  onClick={() => {
+                    void joinSession();
+                  }}
+                  type="button"
+                >
+                  Join session
+                </button>
+                <button
+                  className="rounded-full border border-[var(--line)] bg-white/60 px-5 py-3 font-medium text-[var(--foreground)] transition hover:bg-white disabled:opacity-50"
+                  disabled={!sessionId}
+                  onClick={() => {
+                    void copySessionId();
+                  }}
+                  type="button"
+                >
+                  Copy session ID
+                </button>
+              </div>
+
               <div className="grid gap-4 md:grid-cols-[auto_1fr] md:items-center">
                 <div className="flex flex-wrap gap-3">
                   <button
@@ -698,7 +983,7 @@ export function MeetingBuddyApp({
                     onClick={startSession}
                     type="button"
                   >
-                    Start listening
+                    Start local capture
                   </button>
                   <button
                     className="rounded-full border border-[var(--line)] bg-white/60 px-5 py-3 font-medium text-[var(--foreground)] transition hover:bg-white disabled:opacity-50"
@@ -722,7 +1007,7 @@ export function MeetingBuddyApp({
                     onClick={stopSession}
                     type="button"
                   >
-                    Stop
+                    {sessionMode === "companion" ? "Leave session" : "Stop"}
                   </button>
                 </div>
 
@@ -759,133 +1044,140 @@ export function MeetingBuddyApp({
           </div>
 
           <div className="glass-panel rounded-[2rem] p-5 md:p-6">
-            <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
-              Ask the buddy
-            </p>
-            <div className="mt-4 flex flex-col gap-3">
+            <div className="flex h-full flex-col gap-4">
+              <div>
+                <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
+                  Ask Live
+                </p>
+                <p className="mt-2 text-sm leading-6 text-[var(--ink-soft)]">
+                  Keep this tab attached as your live Q&A console while the extension or another browser tab
+                  handles capture.
+                </p>
+              </div>
+
               <textarea
-                className="min-h-28 rounded-[1.5rem] border border-[var(--line)] bg-white/70 px-4 py-3 outline-none transition focus:border-[var(--accent)]"
+                className="min-h-32 rounded-[1.5rem] border border-[var(--line)] bg-white/70 px-4 py-4 outline-none transition focus:border-[var(--accent)]"
+                disabled={!canAsk}
                 onChange={(event) => setQuestion(event.target.value)}
-                placeholder="What did we decide about deadlines?"
+                placeholder="What did we decide about launch timing?"
                 value={question}
               />
-              <button
-                className="rounded-full bg-[var(--foreground)] px-5 py-3 font-medium text-white transition hover:translate-y-[-1px] disabled:opacity-50"
-                disabled={!canAsk || !question.trim()}
-                onClick={sendQuestion}
-                type="button"
-              >
-                Ask now
-              </button>
-            </div>
-            {currentAnswer ? (
-              <div className="mt-5 rounded-[1.5rem] border border-[var(--line)] bg-white/75 p-4">
-                <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
-                  Streaming answer
-                </p>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-7">{currentAnswer}</p>
+
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  className="rounded-full bg-[var(--foreground)] px-5 py-3 font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+                  disabled={!canAsk || !question.trim()}
+                  onClick={sendQuestion}
+                  type="button"
+                >
+                  Ask buddy
+                </button>
+                {currentAnswer ? (
+                  <span className="mono text-xs uppercase tracking-[0.22em] text-[var(--ink-soft)]">
+                    streaming reply
+                  </span>
+                ) : null}
               </div>
-            ) : null}
+
+              <div className="rounded-[1.5rem] border border-[var(--line)] bg-white/55 p-4">
+                <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
+                  Current Reply
+                </p>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[var(--foreground)]">
+                  {currentAnswer || "No live answer in progress."}
+                </p>
+              </div>
+
+              <div className="rounded-[1.5rem] border border-[var(--line)] bg-white/55 p-4">
+                <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
+                  Recent Q&A
+                </p>
+                <div className="mt-3 flex max-h-72 flex-col gap-3 overflow-auto">
+                  {questionAnswers.length > 0 ? (
+                    questionAnswers.map((entry, index) => (
+                      <article
+                        className="rounded-2xl border border-[var(--line)] bg-white/75 px-4 py-3"
+                        key={`${entry.question}-${index}`}
+                      >
+                        <p className="text-sm font-medium">
+                          Q: {entry.question}
+                          {formatAskedAt(entry.askedAt)}
+                        </p>
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-[var(--ink-soft)]">
+                          {entry.answer}
+                        </p>
+                      </article>
+                    ))
+                  ) : (
+                    <p className="text-sm text-[var(--ink-soft)]">No questions asked yet.</p>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
-        <section className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr_0.95fr]">
-          <article className="glass-panel rounded-[2rem] p-5 md:p-6">
-            <div className="flex items-center justify-between">
-              <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
-                Live transcript
-              </p>
-              <span className="mono text-xs text-[var(--ink-soft)]">{transcriptEntries.length} commits</span>
+        <section className="grid gap-4 lg:grid-cols-[0.85fr_0.85fr_1.3fr]">
+          <div className="glass-panel rounded-[2rem] p-5 md:p-6">
+            <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">Live Speech</p>
+            <p className="mt-3 min-h-28 whitespace-pre-wrap text-sm leading-7 text-[var(--foreground)]">
+              {partialTranscript || "Waiting for live speech..."}
+            </p>
+          </div>
+
+          <div className="glass-panel rounded-[2rem] p-5 md:p-6">
+            <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
+              Pending Transcript
+            </p>
+            <div className="mt-3 flex max-h-72 flex-col gap-3 overflow-auto">
+              {provisionalEntries.length > 0 ? (
+                provisionalEntries
+                  .slice()
+                  .reverse()
+                  .map((entry) => (
+                    <article
+                      className="rounded-2xl border border-[var(--line)] bg-white/70 px-4 py-3"
+                      key={entry.id}
+                    >
+                      <p className="mono text-xs uppercase tracking-[0.18em] text-[var(--ink-soft)]">
+                        pending {entry.at}
+                      </p>
+                      <p className="mt-2 text-sm leading-7 text-[var(--foreground)]">{entry.text}</p>
+                    </article>
+                  ))
+              ) : (
+                <p className="text-sm text-[var(--ink-soft)]">No pending transcript chunks right now.</p>
+              )}
             </div>
-            {partialTranscript ? (
-              <div className="mt-4 rounded-[1.5rem] border border-dashed border-[var(--accent)] bg-white/70 p-4">
-                <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--accent)]">
-                  In progress
-                </p>
-                <p className="mt-2 text-sm leading-7">{partialTranscript}</p>
-              </div>
-            ) : null}
-            {provisionalEntries.length > 0 ? (
-              <div className="mt-4 flex flex-col gap-3">
-                {provisionalEntries.map((entry) => (
-                  <div
-                    className="rounded-[1.5rem] border border-dashed border-[var(--line)] bg-white/70 p-4"
-                    key={`pending-${entry.at}-${entry.text}`}
-                  >
-                    <p className="mono text-xs uppercase tracking-[0.18em] text-[var(--ink-soft)]">
-                      Pending commit {entry.at}
-                    </p>
-                    <p className="mt-2 text-sm leading-7">{entry.text}</p>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            <div className="mt-4 flex max-h-[32rem] flex-col gap-3 overflow-auto pr-1">
+          </div>
+
+          <div className="glass-panel rounded-[2rem] p-5 md:p-6">
+            <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">Committed Transcript</p>
+            <div className="mt-3 flex max-h-72 flex-col gap-3 overflow-auto">
               {transcriptEntries.length > 0 ? (
-                transcriptEntries.map((entry) => (
-                  <div
-                    className="rounded-[1.5rem] border border-[var(--line)] bg-white/70 p-4"
-                    key={`${entry.at}-${entry.text}`}
-                  >
-                    <p className="mono text-xs text-[var(--ink-soft)]">{entry.at}</p>
-                    <p className="mt-2 text-sm leading-7">{entry.text}</p>
-                  </div>
-                ))
-              ) : (
-                <div className="rounded-[1.5rem] border border-[var(--line)] bg-white/60 p-4 text-sm text-[var(--ink-soft)]">
-                  Committed transcript chunks will start appearing here.
-                </div>
-              )}
-            </div>
-          </article>
-
-          <article className="glass-panel rounded-[2rem] p-5 md:p-6">
-            <div className="flex items-center justify-between">
-              <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
-                Obsidian note preview
-              </p>
-              {notePathRelative ? (
-                <span className="mono text-xs text-[var(--ink-soft)]">{notePathRelative}</span>
-              ) : null}
-            </div>
-            <div className="mt-4 max-h-[32rem] overflow-auto rounded-[1.5rem] border border-[var(--line)] bg-[#fffaf4] p-4">
-              <pre className="whitespace-pre-wrap text-sm leading-7 text-[var(--foreground)]">
-                {noteMarkdown || "Your live note will appear here as transcript chunks land."}
-              </pre>
-            </div>
-          </article>
-
-          <article className="glass-panel rounded-[2rem] p-5 md:p-6">
-            <div className="flex items-center justify-between">
-              <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
-                Recent Q&A
-              </p>
-              <span className="mono text-xs text-[var(--ink-soft)]">{questionAnswers.length} answers</span>
-            </div>
-            <div className="mt-4 flex max-h-[32rem] flex-col gap-3 overflow-auto pr-1">
-              {questionAnswers.length > 0 ? (
-                questionAnswers.map((entry) => (
-                  <div
-                    className="rounded-[1.5rem] border border-[var(--line)] bg-white/70 p-4"
-                    key={`${entry.question}-${entry.answer}`}
+                transcriptEntries.map((entry, index) => (
+                  <article
+                    className="rounded-2xl border border-[var(--line)] bg-white/70 px-4 py-3"
+                    key={`${entry.at}-${index}`}
                   >
                     <p className="mono text-xs uppercase tracking-[0.18em] text-[var(--ink-soft)]">
-                      Question
+                      {entry.at}
                     </p>
-                    <p className="mt-2 text-sm leading-7">{entry.question}</p>
-                    <p className="mono mt-4 text-xs uppercase tracking-[0.18em] text-[var(--ink-soft)]">
-                      Answer
-                    </p>
-                    <p className="mt-2 whitespace-pre-wrap text-sm leading-7">{entry.answer}</p>
-                  </div>
+                    <p className="mt-2 text-sm leading-7 text-[var(--foreground)]">{entry.text}</p>
+                  </article>
                 ))
               ) : (
-                <div className="rounded-[1.5rem] border border-[var(--line)] bg-white/60 p-4 text-sm text-[var(--ink-soft)]">
-                  Ask about a decision, a name, or what changed in the conversation and the buddy will answer here.
-                </div>
+                <p className="text-sm text-[var(--ink-soft)]">Transcript has not started yet.</p>
               )}
             </div>
-          </article>
+          </div>
+        </section>
+
+        <section className="glass-panel rounded-[2rem] p-5 md:p-6">
+          <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">Live Note</p>
+          <pre className="mt-4 overflow-auto whitespace-pre-wrap rounded-[1.5rem] border border-[var(--line)] bg-white/65 p-4 text-sm leading-7 text-[var(--foreground)]">
+            {noteMarkdown || "The live note will appear here as soon as the session starts."}
+          </pre>
         </section>
       </div>
     </main>

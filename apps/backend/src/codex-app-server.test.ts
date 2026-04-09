@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { homedir } from "node:os";
 import test from "node:test";
 
-import { buildQuestionPrompt, buildThreadStartParams } from "./codex-app-server";
+import {
+  buildCodexAppServerArgs,
+  buildQuestionPrompt,
+  buildThreadStartParams,
+} from "./codex-app-server";
 import { resolveConfiguredPath } from "./meeting-session";
 
 test("buildThreadStartParams anchors the Codex thread in the vault cwd", async () => {
@@ -12,7 +16,20 @@ test("buildThreadStartParams anchors the Codex thread in the vault cwd", async (
   });
 
   assert.equal(params.cwd, "/Users/ratulsarna/Vault/ObsidianVault");
-  assert.equal(params.sandbox, "read-only");
+  assert.equal(params.sandbox, "danger-full-access");
+  assert.equal(params.approvalPolicy, "never");
+});
+
+test("buildCodexAppServerArgs starts the app-server in full-access mode", () => {
+  assert.deepEqual(buildCodexAppServerArgs(), [
+    "app-server",
+    "--listen",
+    "stdio://",
+    "-c",
+    'sandbox_mode="danger-full-access"',
+    "-c",
+    'approval_policy="never"',
+  ]);
 });
 
 test("buildQuestionPrompt keeps the live note primary while exposing the vault cwd", () => {
@@ -25,6 +42,7 @@ test("buildQuestionPrompt keeps the live note primary while exposing the vault c
   assert.match(prompt, /Current live note:/);
   assert.match(prompt, /Obsidian vault working directory:/);
   assert.match(prompt, /Answer using the transcript and note context above first/);
+  assert.match(prompt, /explicitly asks about the vault, a file/);
 });
 
 test("resolveConfiguredPath expands a home-directory shorthand path", () => {

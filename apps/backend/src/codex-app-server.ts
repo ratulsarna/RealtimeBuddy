@@ -103,11 +103,14 @@ type CodexAppServerOptions = {
   workingDirectory: string;
 };
 
+type CodexSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
+type CodexApprovalPolicy = "never" | "on-request" | "on-failure" | "untrusted";
+
 type ThreadStartParams = {
   model: string;
   cwd: string;
-  approvalPolicy: "never";
-  sandbox: "read-only";
+  approvalPolicy: CodexApprovalPolicy;
+  sandbox: CodexSandboxMode;
   ephemeral: boolean;
   experimentalRawEvents: boolean;
   persistExtendedHistory: boolean;
@@ -121,6 +124,8 @@ const PREFERRED_MODELS = [
   "gpt-5.3-codex",
   "gpt-5.4",
 ];
+const DEFAULT_CODEX_SANDBOX_MODE: CodexSandboxMode = "danger-full-access";
+const DEFAULT_CODEX_APPROVAL_POLICY: CodexApprovalPolicy = "never";
 const REQUEST_TIMEOUT_MS = 20_000;
 const TURN_TIMEOUT_MS = 90_000;
 
@@ -145,7 +150,7 @@ export function buildQuestionPrompt(options: {
     "User question:",
     options.question,
     "",
-    "Answer using the transcript and note context above first. When helpful, inspect relevant files in the Obsidian vault rooted at the working directory above. Be concise and direct. If something is uncertain, say that plainly.",
+    "Answer using the transcript and note context above first. If the user explicitly asks about the vault, a file, or something outside the live note, inspect the relevant Obsidian vault files rooted at the working directory above before answering. Be concise and direct. If something is uncertain, say that plainly.",
   ].join("\n");
 }
 
@@ -153,16 +158,19 @@ export async function buildThreadStartParams(options: {
   modelPromise: Promise<string>;
   workingDirectory: string;
 }): Promise<ThreadStartParams> {
+  const sandboxMode = resolveCodexSandboxMode(process.env.CODEX_SANDBOX_MODE);
+  const approvalPolicy = resolveCodexApprovalPolicy(process.env.CODEX_APPROVAL_POLICY);
+
   return {
     model: await options.modelPromise,
     cwd: options.workingDirectory,
-    approvalPolicy: "never",
-    sandbox: "read-only",
+    approvalPolicy,
+    sandbox: sandboxMode,
     ephemeral: true,
     experimentalRawEvents: false,
     persistExtendedHistory: false,
     developerInstructions:
-      "You are RealtimeBuddy, a fast ambient meeting assistant. The thread cwd is an Obsidian vault. Answer from the live meeting context first, but inspect relevant vault files when they help answer the user's question. Be concise and say clearly when the transcript or vault does not support a claim.",
+      "You are RealtimeBuddy, a fast ambient meeting assistant. The thread cwd is an Obsidian vault. Answer from the live meeting context first, but if the user explicitly asks about the vault, a file, or something outside the live note, inspect the relevant vault files before answering. Be concise and say clearly when the transcript or vault does not support a claim.",
     serviceName: "realtimebuddy",
   };
 }
@@ -179,7 +187,7 @@ export class CodexAppServer {
 
   constructor(options: CodexAppServerOptions) {
     this.workingDirectory = options.workingDirectory;
-    this.process = spawn("codex", ["app-server", "--listen", "stdio://"], {
+    this.process = spawn("codex", buildCodexAppServerArgs(), {
       cwd: this.workingDirectory,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -244,7 +252,7 @@ export class CodexAppServer {
         },
       ],
       model: await this.getSelectedModel(),
-      effort: "low",
+      effort: "high",
     });
 
     return await new Promise<string>((resolve, reject) => {
@@ -466,5 +474,52 @@ export class CodexAppServer {
       pendingTurn.reject(message);
       this.pendingTurns.delete(turnId);
     }
+  }
+}
+
+export function buildCodexAppServerArgs() {
+  const sandboxMode = resolveCodexSandboxMode(process.env.CODEX_SANDBOX_MODE);
+  const approvalPolicy = resolveCodexApprovalPolicy(process.env.CODEX_APPROVAL_POLICY);
+
+  return [
+    "app-server",
+    "--listen",
+    "stdio://",
+    "-c",
+    `sandbox_mode="${sandboxMode}"`,
+    "-c",
+    `approval_policy="${approvalPolicy}"`,
+  ];
+}
+
+function resolveCodexSandboxMode(value: string | undefined): CodexSandboxMode {
+  const normalized = value?.trim();
+
+  switch (normalized) {
+    case "read-only":
+      return "read-only";
+    case "workspace-write":
+      return "workspace-write";
+    case "danger-full-access":
+      return "danger-full-access";
+    default:
+      return DEFAULT_CODEX_SANDBOX_MODE;
+  }
+}
+
+function resolveCodexApprovalPolicy(value: string | undefined): CodexApprovalPolicy {
+  const normalized = value?.trim();
+
+  switch (normalized) {
+    case "never":
+      return "never";
+    case "on-request":
+      return "on-request";
+    case "on-failure":
+      return "on-failure";
+    case "untrusted":
+      return "untrusted";
+    default:
+      return DEFAULT_CODEX_APPROVAL_POLICY;
   }
 }

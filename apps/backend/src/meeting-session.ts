@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { resolveRealtimeLanguageCode, type SessionLanguagePreference } from "@realtimebuddy/shared/language-preferences";
+import type { ServerEvent, SessionCaptureState } from "@realtimebuddy/shared/protocol";
 
 import { CodexAppServer } from "./codex-app-server";
 import { ElevenLabsBridge } from "./elevenlabs-bridge";
@@ -14,65 +15,7 @@ type AudioChunk = {
   sampleRate: number;
 };
 
-type SendEvent = (event:
-  | {
-      type: "session_ready";
-      sessionId: string;
-      notePath: string;
-      notePathRelative: string;
-      logPath: string;
-      logPathRelative: string;
-      model: string;
-    }
-  | {
-      type: "buddy_ready";
-      model: string;
-    }
-  | {
-      type: "status";
-      message: string;
-    }
-  | {
-      type: "transcript_partial";
-      text: string;
-    }
-  | {
-      type: "transcript_provisional";
-      provisionalId: string;
-      text: string;
-      provisionalAt: string;
-    }
-  | {
-      type: "transcript_committed";
-      resolvedProvisionalId: string;
-      text: string;
-      committedAt: string;
-    }
-  | {
-      type: "notes_updated";
-      markdown: string;
-    }
-  | {
-      type: "session_paused";
-    }
-  | {
-      type: "session_resumed";
-    }
-  | {
-      type: "answer_delta";
-      delta: string;
-    }
-  | {
-      type: "answer_done";
-      text: string;
-    }
-  | {
-      type: "session_stopped";
-    }
-  | {
-      type: "error";
-      message: string;
-    }) => void;
+type SendEvent = (event: ServerEvent) => void;
 
 type MeetingSessionOptions = {
   sampleRate: number;
@@ -97,6 +40,25 @@ type QuestionAnswer = {
   question: string;
   answer: string;
   askedAt: string;
+};
+
+export type MeetingSessionSnapshot = {
+  sessionId: string;
+  title: string;
+  includeTabAudio: boolean;
+  languagePreference: SessionLanguagePreference;
+  notePath: string;
+  notePathRelative: string;
+  logPath: string;
+  logPathRelative: string;
+  model: string;
+  partialTranscript: string;
+  provisionalEntries: ProvisionalSegment[];
+  transcriptEntries: TranscriptSegment[];
+  questionAnswers: QuestionAnswer[];
+  markdown: string;
+  captureState: SessionCaptureState;
+  statusMessage: string;
 };
 
 const DEFAULT_VAULT_PATH = path.join(homedir(), "ObsidianVault");
@@ -136,6 +98,7 @@ export class MeetingSession {
   private readonly provisionalSegments: ProvisionalSegment[] = [];
   private readonly questionAnswers: QuestionAnswer[] = [];
   private readonly startedAt = new Date();
+  private lastStatusMessage = "Preparing session...";
   private readonly vaultPath = resolveConfiguredPath(
     process.env.OBSIDIAN_VAULT_PATH,
     DEFAULT_VAULT_PATH
@@ -213,23 +176,48 @@ export class MeetingSession {
     });
 
     this.ensureElevenLabsConnected();
+    this.lastStatusMessage = "Session ready. Waiting for live transcription...";
 
-    this.sendEvent({
+    this.emitEvent({
       type: "session_ready",
       sessionId: this.id,
+      title: this.title,
+      includeTabAudio: this.includeTabAudio,
+      languagePreference: this.languagePreference,
       notePath: this.notePath,
       notePathRelative: this.notePathRelative,
       logPath: this.logPath,
       logPathRelative: this.logPathRelative,
       model: "",
     });
-    this.sendEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
+    this.emitEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
     await this.logEvent("session_ready", {
       model: "pending",
     });
 
     this.flushQueuedAudio();
     void this.ensureCodexReady();
+  }
+
+  getSnapshot(): MeetingSessionSnapshot {
+    return {
+      sessionId: this.id,
+      title: this.title,
+      includeTabAudio: this.includeTabAudio,
+      languagePreference: this.languagePreference,
+      notePath: this.notePath,
+      notePathRelative: this.notePathRelative,
+      logPath: this.logPath,
+      logPathRelative: this.logPathRelative,
+      model: this.codexModel,
+      partialTranscript: this.partialTranscript,
+      provisionalEntries: this.provisionalSegments.map((segment) => ({ ...segment })),
+      transcriptEntries: this.transcriptSegments.map((segment) => ({ ...segment })),
+      questionAnswers: this.questionAnswers.map((entry) => ({ ...entry })),
+      markdown: this.currentMarkdown(),
+      captureState: this.captureState(),
+      statusMessage: this.lastStatusMessage,
+    };
   }
 
   pushAudioChunk(chunk: AudioChunk) {
@@ -301,7 +289,7 @@ export class MeetingSession {
         pendingAnswerDelta += delta;
         if (answerDeltaTimer === null) {
           answerDeltaTimer = setTimeout(() => {
-            this.sendEvent({ type: "answer_delta", delta: pendingAnswerDelta });
+            this.emitEvent({ type: "answer_delta", delta: pendingAnswerDelta });
             pendingAnswerDelta = "";
             answerDeltaTimer = null;
           }, 120);
@@ -312,7 +300,7 @@ export class MeetingSession {
         clearTimeout(answerDeltaTimer);
       }
       if (pendingAnswerDelta) {
-        this.sendEvent({ type: "answer_delta", delta: pendingAnswerDelta });
+        this.emitEvent({ type: "answer_delta", delta: pendingAnswerDelta });
       }
 
       answer = text || answer;
@@ -327,8 +315,8 @@ export class MeetingSession {
         question,
         answer,
       });
-      this.sendEvent({ type: "answer_done", text: answer });
-      this.sendEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
+      this.emitEvent({ type: "answer_done", text: answer });
+      this.emitEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
     });
 
     this.askQueue = runAsk.catch(() => undefined);
@@ -355,7 +343,7 @@ export class MeetingSession {
         questionsAnswered: this.questionAnswers.length,
         audioChunksReceived: this.audioChunkCount,
       });
-      this.sendEvent({ type: "session_paused" });
+      this.emitEvent({ type: "session_paused" });
     })();
 
     this.pausePromise = runPause.finally(() => {
@@ -413,7 +401,7 @@ export class MeetingSession {
 
     if (this.audioQueue.length > 0 && (this.paused || this.bridgeConnecting || !this.bridgeReady)) {
       this.paused = false;
-      this.sendEvent({
+      this.emitEvent({
         type: "status",
         message: "Finalizing buffered audio before stopping...",
       });
@@ -429,7 +417,7 @@ export class MeetingSession {
           bufferedAudioChunks: this.audioQueue.length,
           message: String(error),
         });
-        this.sendEvent({
+        this.emitEvent({
           type: "status",
           message: "Could not finalize the last buffered audio before stopping.",
         });
@@ -446,7 +434,7 @@ export class MeetingSession {
       questionsAnswered: this.questionAnswers.length,
       audioChunksReceived: this.audioChunkCount,
     });
-    this.sendEvent({ type: "session_stopped" });
+    this.emitEvent({ type: "session_stopped" });
   }
 
   private async handleCommittedTranscript(text: string) {
@@ -472,13 +460,13 @@ export class MeetingSession {
       resolvedProvisionalId: resolvedProvisionalId || "none",
       totalCommittedSegments: this.transcriptSegments.length,
     });
-    this.sendEvent({
+    this.emitEvent({
       type: "transcript_committed",
       text: committedText,
       committedAt,
       resolvedProvisionalId,
     });
-    this.sendEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
+    this.emitEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
   }
 
   private flushQueuedAudio() {
@@ -513,7 +501,7 @@ export class MeetingSession {
         trimmedCount,
         maxBufferedChunks: MAX_BUFFERED_AUDIO_CHUNKS,
       });
-      this.sendEvent({
+      this.emitEvent({
         type: "status",
         message: "Transcription is offline. Keeping only the most recent audio while reconnecting.",
       });
@@ -551,6 +539,26 @@ export class MeetingSession {
     });
   }
 
+  private captureState(): SessionCaptureState {
+    if (this.stopped) {
+      return "stopped";
+    }
+
+    if (this.paused) {
+      return "paused";
+    }
+
+    return "live";
+  }
+
+  private emitEvent(event: ServerEvent) {
+    if (event.type === "status") {
+      this.lastStatusMessage = event.message;
+    }
+
+    this.sendEvent(event);
+  }
+
   private async writeNote() {
     await writeFile(this.notePath, this.currentMarkdown(), "utf8");
   }
@@ -576,7 +584,7 @@ export class MeetingSession {
             return;
           }
 
-          this.sendEvent({
+          this.emitEvent({
             type: "buddy_ready",
             model,
           });
@@ -589,7 +597,7 @@ export class MeetingSession {
             return;
           }
 
-          this.sendEvent({
+          this.emitEvent({
             type: "status",
             message: `${this.codexUnavailableMessage} Live capture will continue without Q&A.`,
           });
@@ -654,7 +662,7 @@ export class MeetingSession {
         }
 
         void this.logEvent("status", { message });
-        this.sendEvent({ type: "status", message });
+        this.emitEvent({ type: "status", message });
       },
       onReady: () => {
         if (this.elevenLabs !== bridge) {
@@ -673,7 +681,7 @@ export class MeetingSession {
             questionsAnswered: this.questionAnswers.length,
             bufferedAudioChunks: this.audioQueue.length,
           });
-          this.sendEvent({ type: "session_resumed" });
+          this.emitEvent({ type: "session_resumed" });
         }
         this.flushQueuedAudio();
       },
@@ -687,7 +695,7 @@ export class MeetingSession {
           text,
           charCount: text.length,
         });
-        this.sendEvent({ type: "transcript_partial", text });
+        this.emitEvent({ type: "transcript_partial", text });
       },
       onCommittedTranscript: (text) => {
         if (this.elevenLabs !== bridge) {
@@ -720,7 +728,7 @@ export class MeetingSession {
           return;
         }
 
-        this.sendEvent({
+        this.emitEvent({
           type: "status",
           message: "Transcription connection dropped. Reconnecting...",
         });
@@ -780,7 +788,7 @@ export class MeetingSession {
       provisionalAt,
     });
     this.lastProvisionalText = provisionalText;
-    this.sendEvent({
+    this.emitEvent({
       type: "transcript_provisional",
       provisionalId,
       text: provisionalText,
@@ -798,7 +806,7 @@ export class MeetingSession {
       provisionalSegments: this.provisionalSegments.length,
       questionsAnswered: this.questionAnswers.length,
     });
-    this.sendEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
+    this.emitEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
 
     return provisionalId;
   }
