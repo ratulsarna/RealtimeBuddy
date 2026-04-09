@@ -1,4 +1,5 @@
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -98,10 +99,30 @@ type QuestionAnswer = {
   askedAt: string;
 };
 
-const DEFAULT_VAULT_PATH = "/Users/ratulsarna/Vault/ObsidianVault";
+const DEFAULT_VAULT_PATH = path.join(homedir(), "ObsidianVault");
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_APP_DIR = path.resolve(SERVER_DIR, "..");
 const MAX_BUFFERED_AUDIO_CHUNKS = 240;
+
+export function resolveConfiguredPath(
+  configuredPath: string | undefined,
+  fallbackPath: string
+) {
+  const trimmedPath = configuredPath?.trim();
+  if (!trimmedPath) {
+    return fallbackPath;
+  }
+
+  if (trimmedPath === "~") {
+    return homedir();
+  }
+
+  if (trimmedPath.startsWith("~/") || trimmedPath.startsWith("~\\")) {
+    return path.join(homedir(), trimmedPath.slice(2));
+  }
+
+  return trimmedPath;
+}
 
 export class MeetingSession {
   readonly id = crypto.randomUUID();
@@ -115,7 +136,10 @@ export class MeetingSession {
   private readonly provisionalSegments: ProvisionalSegment[] = [];
   private readonly questionAnswers: QuestionAnswer[] = [];
   private readonly startedAt = new Date();
-  private readonly vaultPath = process.env.OBSIDIAN_VAULT_PATH ?? DEFAULT_VAULT_PATH;
+  private readonly vaultPath = resolveConfiguredPath(
+    process.env.OBSIDIAN_VAULT_PATH,
+    DEFAULT_VAULT_PATH
+  );
   private readonly notePath: string;
   private readonly notePathRelative: string;
   private readonly logPath: string;
@@ -152,7 +176,10 @@ export class MeetingSession {
     this.languageCode = resolveRealtimeLanguageCode(this.languagePreference);
     this.sendEvent = options.sendEvent;
     const safeFileTitle = this.sanitizeTitleForFileName(this.title);
-    this.codexWorkingDirectory = process.env.CODEX_VAULT_PATH?.trim() || this.vaultPath;
+    this.codexWorkingDirectory = resolveConfiguredPath(
+      process.env.CODEX_VAULT_PATH,
+      this.vaultPath
+    );
 
     const noteFolder = path.join(this.vaultPath, "Notes", "Dated", this.dateStamp(this.startedAt));
     const noteFileName = `${safeFileTitle} - ${this.fileStamp(this.startedAt)}.md`;
