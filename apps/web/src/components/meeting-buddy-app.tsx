@@ -3,6 +3,28 @@
 import { useEffect, useRef, useState } from "react";
 
 import {
+  formatConnectionStateLabel,
+  formatSessionModeLabel,
+  getSessionHeadline,
+  getStatusTone,
+} from "@/components/meeting-buddy/format";
+import { LiveQaPanel } from "@/components/meeting-buddy/live-qa-panel";
+import { NotePanel } from "@/components/meeting-buddy/note-panel";
+import { SessionSidebar } from "@/components/meeting-buddy/session-sidebar";
+import { TranscriptPanel } from "@/components/meeting-buddy/transcript-panel";
+import type {
+  AudioDiagnostics,
+  CaptureIntent,
+  CommittedTranscriptEntry,
+  ConnectionState,
+  PendingTranscriptEntry,
+  QuestionAnswer,
+  SessionDetail,
+  SessionMetric,
+  SessionMode,
+} from "@/components/meeting-buddy/types";
+import { WorkspaceHeader } from "@/components/meeting-buddy/workspace-header";
+import {
   listAudioInputDevices,
   startAudioCapture,
   type AudioCaptureHandle,
@@ -11,57 +33,13 @@ import {
 import { resolveBrowserBackendConfig } from "@/lib/backend-config";
 import {
   getSessionLanguageLabel,
-  sessionLanguageOptions,
   type SessionLanguagePreference,
 } from "@realtimebuddy/shared/language-preferences";
 import { type ServerEvent } from "@realtimebuddy/shared/protocol";
 
-type PendingTranscriptEntry = {
-  id: string;
-  text: string;
-  at: string;
-};
-
-type CommittedTranscriptEntry = {
-  text: string;
-  at: string;
-};
-
-type QuestionAnswer = {
-  question: string;
-  answer: string;
-  askedAt?: string;
-};
-
-type AudioDiagnostics = {
-  rms: number;
-  peak: number;
-  gateOpen: boolean;
-  openThreshold: number;
-  closeThreshold: number;
-  candidateChunks: number;
-  sentChunks: number;
-  droppedChunks: number;
-};
-
-type CaptureIntent = "idle" | "starting" | "resuming";
-type SessionMode = "local_capture" | "companion" | null;
-type ConnectionState =
-  | "idle"
-  | "connecting"
-  | "starting"
-  | "live"
-  | "paused"
-  | "resuming"
-  | "stopping";
-
 type MeetingBuddyAppProps = {
   backendBaseUrl?: string;
 };
-
-function formatAskedAt(askedAt?: string) {
-  return askedAt ? ` at ${askedAt}` : "";
-}
 
 export function MeetingBuddyApp({
   backendBaseUrl = "",
@@ -166,12 +144,11 @@ export function MeetingBuddyApp({
     microphones.find((device) => device.deviceId === selectedMicId)?.label ||
     "Browser default microphone";
   const backendTargetLabel = backendBaseUrl.replace(/\/$/, "") || "current host:3001";
-  const sessionModeLabel =
-    sessionMode === "local_capture"
-      ? "local capture"
-      : sessionMode === "companion"
-        ? "companion"
-        : "detached";
+  const languageLabel = getSessionLanguageLabel(languagePreference);
+  const connectionStateLabel = formatConnectionStateLabel(connectionState);
+  const sessionModeLabel = formatSessionModeLabel(sessionMode);
+  const sessionHeadline = getSessionHeadline(connectionState, sessionMode);
+  const statusTone = getStatusTone(connectionState);
 
   const syncSessionQuery = (nextSessionId: string) => {
     const url = new URL(window.location.href);
@@ -815,370 +792,143 @@ export function MeetingBuddyApp({
     !isAsking &&
     (connectionState === "live" || connectionState === "paused");
 
+  const askHint = canAsk
+    ? "This workspace stays useful during the meeting: ask for decisions, loose ends, next steps, or what just changed."
+    : "Start a local capture or join a live session first, then ask here without leaving the conversation.";
+
+  const sessionMetrics: SessionMetric[] = [
+    { label: "State", value: connectionStateLabel },
+    { label: "Mode", value: sessionModeLabel },
+    { label: "Language", value: languageLabel },
+    {
+      label: "Clients",
+      value: `${captureClientCount} capture / ${companionClientCount} companion`,
+    },
+  ];
+
+  const sessionDetails: SessionDetail[] = [
+    sessionId
+      ? {
+          label: "Session ID",
+          value: sessionId,
+          mono: true,
+        }
+      : null,
+    modelName
+      ? {
+          label: "Answer Model",
+          value: modelName,
+        }
+      : null,
+    {
+      label: "Backend",
+      value: backendTargetLabel,
+      mono: true,
+    },
+    {
+      label: "Capture Mix",
+      value: includeTabAudio ? "Microphone + tab audio" : "Microphone only",
+    },
+    notePathRelative
+      ? {
+          label: "Note Path",
+          value: notePathRelative,
+          mono: true,
+        }
+      : null,
+    logPathRelative
+      ? {
+          label: "Log Path",
+          value: logPathRelative,
+          mono: true,
+        }
+      : null,
+  ].filter((detail): detail is SessionDetail => Boolean(detail));
+
   return (
-    <main className="grain relative min-h-screen overflow-hidden px-4 py-5 md:px-8 md:py-8">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
-        <section className="glass-panel rounded-[2rem] p-5 md:p-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-2xl">
-              <p className="mono text-xs uppercase tracking-[0.3em] text-[var(--ink-soft)]">
-                Ambient Meeting Companion
-              </p>
-              <h1 className="mt-3 text-4xl font-semibold tracking-tight text-[var(--foreground)] md:text-6xl">
-                Record from the browser or extension. Keep the live Q&A tab open either way.
-              </h1>
-              <p className="mt-4 max-w-2xl text-base leading-7 text-[var(--ink-soft)] md:text-lg">
-                RealtimeBuddy now supports a shared live session model: one capture source can stream audio
-                while another browser tab stays attached for note review and live questions.
-              </p>
-            </div>
-            <div className="rounded-[1.75rem] border border-[var(--line)] bg-[var(--panel-strong)] px-5 py-4 shadow-[0_12px_30px_rgba(69,47,28,0.06)]">
-              <p className="mono text-xs uppercase tracking-[0.28em] text-[var(--ink-soft)]">Status</p>
-              <p className="mt-2 text-lg font-medium">{statusMessage}</p>
-              <div className="mt-3 flex flex-wrap gap-2 text-sm text-[var(--ink-soft)]">
-                <span className="rounded-full bg-[var(--accent-soft)] px-3 py-1">{connectionState}</span>
-                <span className="rounded-full border border-[var(--line)] px-3 py-1">{sessionModeLabel}</span>
-                {sessionId ? (
-                  <span className="rounded-full border border-[var(--line)] px-3 py-1">session {sessionId}</span>
-                ) : null}
-                {modelName ? (
-                  <span className="rounded-full border border-[var(--line)] px-3 py-1">{modelName}</span>
-                ) : null}
-                <span className="rounded-full border border-[var(--line)] px-3 py-1">
-                  backend {backendTargetLabel}
-                </span>
-                {notePathRelative ? (
-                  <span className="rounded-full border border-[var(--line)] px-3 py-1">{notePathRelative}</span>
-                ) : null}
-                {logPathRelative ? (
-                  <span className="rounded-full border border-[var(--line)] px-3 py-1">{logPathRelative}</span>
-                ) : null}
-                <span className="rounded-full border border-[var(--line)] px-3 py-1">
-                  {getSessionLanguageLabel(languagePreference)}
-                </span>
-                <span className="rounded-full border border-[var(--line)] px-3 py-1">
-                  capture {captureClientCount}
-                </span>
-                <span className="rounded-full border border-[var(--line)] px-3 py-1">
-                  companions {companionClientCount}
-                </span>
-                {audioDiagnostics ? (
-                  <span className="rounded-full border border-[var(--line)] px-3 py-1">
-                    gate {audioDiagnostics.gateOpen ? "open" : "closed"}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </section>
+    <main className="grain relative min-h-screen overflow-hidden px-4 py-4 md:px-6 md:py-6">
+      <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 md:gap-6">
+        <WorkspaceHeader
+          captureClientCount={captureClientCount}
+          companionClientCount={companionClientCount}
+          connectionStateLabel={connectionStateLabel}
+          languageLabel={languageLabel}
+          selectedMicLabel={selectedMicLabel}
+          sessionHeadline={sessionHeadline}
+          sessionId={sessionId}
+          sessionModeLabel={sessionModeLabel}
+          statusMessage={statusMessage}
+          statusTone={statusTone}
+        />
 
-        <section className="grid gap-4 lg:grid-cols-[1.2fr_0.9fr]">
-          <div className="glass-panel rounded-[2rem] p-5 md:p-6">
-            <div className="flex flex-col gap-4">
-              <div className="grid gap-4 md:grid-cols-[1fr_auto]">
-                <label className="flex flex-col gap-2">
-                  <span className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
-                    Session Title
-                  </span>
-                  <input
-                    className="rounded-2xl border border-[var(--line)] bg-white/70 px-4 py-3 outline-none transition focus:border-[var(--accent)]"
-                    value={title}
-                    onChange={(event) => setTitle(event.target.value)}
-                    placeholder="Weekly review"
-                  />
-                </label>
-
-                <div className="grid gap-4 md:grid-cols-[1fr_1.2fr_auto]">
-                  <label className="flex flex-col gap-2">
-                    <span className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
-                      Language
-                    </span>
-                    <select
-                      className="rounded-2xl border border-[var(--line)] bg-white/70 px-4 py-3 outline-none transition focus:border-[var(--accent)]"
-                      disabled={!canStart}
-                      onChange={(event) =>
-                        setLanguagePreference(event.target.value as SessionLanguagePreference)
-                      }
-                      value={languagePreference}
-                    >
-                      {sessionLanguageOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="flex flex-col gap-2">
-                    <span className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
-                      Microphone
-                    </span>
-                    <select
-                      className="rounded-2xl border border-[var(--line)] bg-white/70 px-4 py-3 outline-none transition focus:border-[var(--accent)]"
-                      disabled={!canStart}
-                      onChange={(event) => setSelectedMicId(event.target.value)}
-                      value={selectedMicId}
-                    >
-                      <option value="">Browser default microphone</option>
-                      {microphones.map((device) => (
-                        <option key={device.deviceId} value={device.deviceId}>
-                          {device.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="flex items-end gap-3 rounded-2xl border border-[var(--line)] bg-white/60 px-4 py-3">
-                    <input
-                      checked={includeTabAudio}
-                      disabled={!canStart}
-                      onChange={(event) => setIncludeTabAudio(event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span className="text-sm text-[var(--foreground)]">Try tab audio too</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-[1fr_auto_auto]">
-                <label className="flex flex-col gap-2">
-                  <span className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
-                    Companion Session ID
-                  </span>
-                  <input
-                    className="rounded-2xl border border-[var(--line)] bg-white/70 px-4 py-3 outline-none transition focus:border-[var(--accent)]"
-                    disabled={!canStart}
-                    value={sessionIdInput}
-                    onChange={(event) => setSessionIdInput(event.target.value)}
-                    placeholder="Paste an extension-owned session ID"
-                  />
-                </label>
-                <button
-                  className="rounded-full border border-[var(--line)] bg-white/60 px-5 py-3 font-medium text-[var(--foreground)] transition hover:bg-white disabled:opacity-50"
-                  disabled={!canJoin}
-                  onClick={() => {
-                    void joinSession();
-                  }}
-                  type="button"
-                >
-                  Join session
-                </button>
-                <button
-                  className="rounded-full border border-[var(--line)] bg-white/60 px-5 py-3 font-medium text-[var(--foreground)] transition hover:bg-white disabled:opacity-50"
-                  disabled={!sessionId}
-                  onClick={() => {
-                    void copySessionId();
-                  }}
-                  type="button"
-                >
-                  Copy session ID
-                </button>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-[auto_1fr] md:items-center">
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    className="rounded-full bg-[var(--accent)] px-5 py-3 font-medium text-white shadow-[0_12px_24px_var(--glow)] transition hover:translate-y-[-1px] disabled:opacity-50"
-                    disabled={!canStart}
-                    onClick={startSession}
-                    type="button"
-                  >
-                    Start local capture
-                  </button>
-                  <button
-                    className="rounded-full border border-[var(--line)] bg-white/60 px-5 py-3 font-medium text-[var(--foreground)] transition hover:bg-white disabled:opacity-50"
-                    disabled={!canPause}
-                    onClick={pauseSession}
-                    type="button"
-                  >
-                    Pause
-                  </button>
-                  <button
-                    className="rounded-full border border-[var(--line)] bg-white/60 px-5 py-3 font-medium text-[var(--foreground)] transition hover:bg-white disabled:opacity-50"
-                    disabled={!canResume}
-                    onClick={resumeSession}
-                    type="button"
-                  >
-                    Resume
-                  </button>
-                  <button
-                    className="rounded-full border border-[var(--line)] bg-white/60 px-5 py-3 font-medium text-[var(--foreground)] transition hover:bg-white disabled:opacity-50"
-                    disabled={!canStop}
-                    onClick={stopSession}
-                    type="button"
-                  >
-                    {sessionMode === "companion" ? "Leave session" : "Stop"}
-                  </button>
-                </div>
-
-                <div className="rounded-2xl border border-[var(--line)] bg-white/55 px-4 py-3">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <p className="mono text-xs uppercase tracking-[0.22em] text-[var(--ink-soft)]">
-                        Live mic level
-                      </p>
-                      <p className="mt-1 text-sm text-[var(--ink-soft)]">{selectedMicLabel}</p>
-                    </div>
-                    <div className="h-3 w-40 overflow-hidden rounded-full bg-[var(--accent-soft)]/45">
-                      <div
-                        className="h-full rounded-full bg-[var(--accent)] transition-[width]"
-                        style={{ width: `${audioLevel * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                  {audioDiagnostics ? (
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[var(--ink-soft)] md:grid-cols-4">
-                      <span>RMS {audioDiagnostics.rms.toFixed(4)}</span>
-                      <span>Peak {audioDiagnostics.peak.toFixed(4)}</span>
-                      <span>Gate {audioDiagnostics.gateOpen ? "open" : "closed"}</span>
-                      <span>Candidates {audioDiagnostics.candidateChunks}</span>
-                      <span>Open {audioDiagnostics.openThreshold.toFixed(3)}</span>
-                      <span>Close {audioDiagnostics.closeThreshold.toFixed(3)}</span>
-                      <span>Sent {audioDiagnostics.sentChunks}</span>
-                      <span>Dropped {audioDiagnostics.droppedChunks}</span>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(21rem,0.9fr)] md:gap-6">
+          <div className="min-w-0">
+            <LiveQaPanel
+              askHint={askHint}
+              canAsk={canAsk}
+              currentAnswer={currentAnswer}
+              isAsking={isAsking}
+              onQuestionChange={setQuestion}
+              onSendQuestion={sendQuestion}
+              question={question}
+              questionAnswers={questionAnswers}
+            />
           </div>
 
-          <div className="glass-panel rounded-[2rem] p-5 md:p-6">
-            <div className="flex h-full flex-col gap-4">
-              <div>
-                <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
-                  Ask Live
-                </p>
-                <p className="mt-2 text-sm leading-6 text-[var(--ink-soft)]">
-                  Keep this tab attached as your live Q&A console while the extension or another browser tab
-                  handles capture.
-                </p>
-              </div>
-
-              <textarea
-                className="min-h-32 rounded-[1.5rem] border border-[var(--line)] bg-white/70 px-4 py-4 outline-none transition focus:border-[var(--accent)]"
-                disabled={!canAsk}
-                onChange={(event) => setQuestion(event.target.value)}
-                placeholder="What did we decide about launch timing?"
-                value={question}
-              />
-
-              <div className="flex items-center justify-between gap-3">
-                <button
-                  className="rounded-full bg-[var(--foreground)] px-5 py-3 font-medium text-white transition hover:opacity-90 disabled:opacity-50"
-                  disabled={!canAsk || !question.trim()}
-                  onClick={sendQuestion}
-                  type="button"
-                >
-                  Ask buddy
-                </button>
-                {currentAnswer ? (
-                  <span className="mono text-xs uppercase tracking-[0.22em] text-[var(--ink-soft)]">
-                    streaming reply
-                  </span>
-                ) : null}
-              </div>
-
-              <div className="rounded-[1.5rem] border border-[var(--line)] bg-white/55 p-4">
-                <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
-                  Current Reply
-                </p>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[var(--foreground)]">
-                  {currentAnswer || "No live answer in progress."}
-                </p>
-              </div>
-
-              <div className="rounded-[1.5rem] border border-[var(--line)] bg-white/55 p-4">
-                <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
-                  Recent Q&A
-                </p>
-                <div className="mt-3 flex max-h-72 flex-col gap-3 overflow-auto">
-                  {questionAnswers.length > 0 ? (
-                    questionAnswers.map((entry, index) => (
-                      <article
-                        className="rounded-2xl border border-[var(--line)] bg-white/75 px-4 py-3"
-                        key={`${entry.question}-${index}`}
-                      >
-                        <p className="text-sm font-medium">
-                          Q: {entry.question}
-                          {formatAskedAt(entry.askedAt)}
-                        </p>
-                        <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-[var(--ink-soft)]">
-                          {entry.answer}
-                        </p>
-                      </article>
-                    ))
-                  ) : (
-                    <p className="text-sm text-[var(--ink-soft)]">No questions asked yet.</p>
-                  )}
-                </div>
-              </div>
-            </div>
+          <div className="min-w-0">
+            <SessionSidebar
+              audioDiagnostics={audioDiagnostics}
+              audioLevel={audioLevel}
+              canJoin={canJoin}
+              canPause={canPause}
+              canResume={canResume}
+              canStart={canStart}
+              canStop={canStop}
+              includeTabAudio={includeTabAudio}
+              languagePreference={languagePreference}
+              microphones={microphones}
+              onCopySessionId={() => {
+                void copySessionId();
+              }}
+              onIncludeTabAudioChange={setIncludeTabAudio}
+              onJoinSession={() => {
+                void joinSession();
+              }}
+              onLanguageChange={setLanguagePreference}
+              onPauseSession={pauseSession}
+              onResumeSession={resumeSession}
+              onSelectedMicChange={setSelectedMicId}
+              onSessionIdInputChange={setSessionIdInput}
+              onStartSession={startSession}
+              onStopSession={stopSession}
+              onTitleChange={setTitle}
+              selectedMicId={selectedMicId}
+              selectedMicLabel={selectedMicLabel}
+              sessionDetails={sessionDetails}
+              sessionHeadline={sessionHeadline}
+              sessionId={sessionId}
+              sessionIdInput={sessionIdInput}
+              sessionMetrics={sessionMetrics}
+              sessionMode={sessionMode}
+              statusMessage={statusMessage}
+              statusTone={statusTone}
+              title={title}
+            />
           </div>
-        </section>
+        </div>
 
-        <section className="grid gap-4 lg:grid-cols-[0.85fr_0.85fr_1.3fr]">
-          <div className="glass-panel rounded-[2rem] p-5 md:p-6">
-            <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">Live Speech</p>
-            <p className="mt-3 min-h-28 whitespace-pre-wrap text-sm leading-7 text-[var(--foreground)]">
-              {partialTranscript || "Waiting for live speech..."}
-            </p>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.18fr)_minmax(20rem,0.82fr)] md:gap-6">
+          <div className="min-w-0">
+            <NotePanel noteMarkdown={noteMarkdown} notePathRelative={notePathRelative} />
           </div>
-
-          <div className="glass-panel rounded-[2rem] p-5 md:p-6">
-            <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">
-              Pending Transcript
-            </p>
-            <div className="mt-3 flex max-h-72 flex-col gap-3 overflow-auto">
-              {provisionalEntries.length > 0 ? (
-                provisionalEntries
-                  .slice()
-                  .reverse()
-                  .map((entry) => (
-                    <article
-                      className="rounded-2xl border border-[var(--line)] bg-white/70 px-4 py-3"
-                      key={entry.id}
-                    >
-                      <p className="mono text-xs uppercase tracking-[0.18em] text-[var(--ink-soft)]">
-                        pending {entry.at}
-                      </p>
-                      <p className="mt-2 text-sm leading-7 text-[var(--foreground)]">{entry.text}</p>
-                    </article>
-                  ))
-              ) : (
-                <p className="text-sm text-[var(--ink-soft)]">No pending transcript chunks right now.</p>
-              )}
-            </div>
+          <div className="min-w-0">
+            <TranscriptPanel
+              partialTranscript={partialTranscript}
+              provisionalEntries={provisionalEntries}
+              transcriptEntries={transcriptEntries}
+            />
           </div>
-
-          <div className="glass-panel rounded-[2rem] p-5 md:p-6">
-            <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">Committed Transcript</p>
-            <div className="mt-3 flex max-h-72 flex-col gap-3 overflow-auto">
-              {transcriptEntries.length > 0 ? (
-                transcriptEntries.map((entry, index) => (
-                  <article
-                    className="rounded-2xl border border-[var(--line)] bg-white/70 px-4 py-3"
-                    key={`${entry.at}-${index}`}
-                  >
-                    <p className="mono text-xs uppercase tracking-[0.18em] text-[var(--ink-soft)]">
-                      {entry.at}
-                    </p>
-                    <p className="mt-2 text-sm leading-7 text-[var(--foreground)]">{entry.text}</p>
-                  </article>
-                ))
-              ) : (
-                <p className="text-sm text-[var(--ink-soft)]">Transcript has not started yet.</p>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="glass-panel rounded-[2rem] p-5 md:p-6">
-          <p className="mono text-xs uppercase tracking-[0.24em] text-[var(--ink-soft)]">Live Note</p>
-          <pre className="mt-4 overflow-auto whitespace-pre-wrap rounded-[1.5rem] border border-[var(--line)] bg-white/65 p-4 text-sm leading-7 text-[var(--foreground)]">
-            {noteMarkdown || "The live note will appear here as soon as the session starts."}
-          </pre>
-        </section>
+        </div>
       </div>
     </main>
   );
