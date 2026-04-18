@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { ActivityRail } from "@/components/meeting-buddy/activity-rail";
 import { BuddyLane } from "@/components/meeting-buddy/buddy-lane";
 import { DrawerShell } from "@/components/meeting-buddy/drawer-shell";
 import {
@@ -9,10 +10,8 @@ import {
   getStatusTone,
 } from "@/components/meeting-buddy/format";
 import { MeetingBriefCard } from "@/components/meeting-buddy/meeting-brief-card";
-import { NotePanel } from "@/components/meeting-buddy/note-panel";
 import { SessionDrawer } from "@/components/meeting-buddy/session-drawer";
 import { SessionSidebar } from "@/components/meeting-buddy/session-sidebar";
-import { TranscriptPanel } from "@/components/meeting-buddy/transcript-panel";
 import type {
   AudioDiagnostics,
   CaptureIntent,
@@ -907,12 +906,10 @@ export function MeetingBuddyApp({
     canJoin,
     canSaveStandingContext,
     canStart,
-    includeTabAudio,
     isSavingStandingContext,
     languagePreference,
     microphones,
     onCopySessionId: () => { void copySessionId(); },
-    onIncludeTabAudioChange: setIncludeTabAudio,
     onJoinSession: () => { void joinSession(); },
     onLanguageChange: setLanguagePreference,
     onSaveStandingContext: () => { void saveStandingContext(); },
@@ -960,7 +957,9 @@ export function MeetingBuddyApp({
           <div className="h-full overflow-y-auto">
             <MeetingBriefCard
               canStart={canStart}
+              includeTabAudio={includeTabAudio}
               meetingSeed={meetingSeed}
+              onIncludeTabAudioChange={setIncludeTabAudio}
               onMeetingSeedChange={setMeetingSeed}
               onStartSession={startSession}
             />
@@ -984,49 +983,16 @@ export function MeetingBuddyApp({
               />
             </div>
 
-            <section className="shell-rail flex h-[18rem] flex-shrink-0 flex-col overflow-hidden rounded-[1.5rem] border border-[var(--panel-border)] lg:hidden">
-              <div className="flex items-center gap-2 border-b border-[var(--panel-border)]/80 px-4 py-3">
-                <button
-                  aria-pressed={secondaryPanelTab === "transcript"}
-                  className={[
-                    "inline-flex h-9 items-center rounded-full px-3 text-sm font-medium transition",
-                    secondaryPanelTab === "transcript"
-                      ? "bg-[var(--surface-raised-strong)] text-[var(--foreground-strong)]"
-                      : "text-[var(--foreground-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]",
-                  ].join(" ")}
-                  onClick={() => setSecondaryPanelTab("transcript")}
-                  type="button"
-                >
-                  Transcript
-                </button>
-                <button
-                  aria-pressed={secondaryPanelTab === "note"}
-                  className={[
-                    "inline-flex h-9 items-center rounded-full px-3 text-sm font-medium transition",
-                    secondaryPanelTab === "note"
-                      ? "bg-[var(--surface-raised-strong)] text-[var(--foreground-strong)]"
-                      : "text-[var(--foreground-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]",
-                  ].join(" ")}
-                  onClick={() => setSecondaryPanelTab("note")}
-                  type="button"
-                >
-                  Note
-                </button>
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                {secondaryPanelTab === "transcript" ? (
-                  <TranscriptPanel
-                    partialTranscript={partialTranscript}
-                    provisionalEntries={provisionalEntries}
-                    transcriptEntries={transcriptEntries}
-                  />
-                ) : (
-                  <NotePanel noteMarkdown={noteMarkdown} notePathRelative={notePathRelative} />
-                )}
-              </div>
-            </section>
-
+            <ActivityRail
+              className="hidden h-full flex-shrink-0 lg:flex lg:w-[22rem] xl:w-[24rem]"
+              noteMarkdown={noteMarkdown}
+              notePathRelative={notePathRelative}
+              onTabChange={setSecondaryPanelTab}
+              partialTranscript={partialTranscript}
+              provisionalEntries={provisionalEntries}
+              tab={secondaryPanelTab}
+              transcriptEntries={transcriptEntries}
+            />
           </div>
         )}
       </div>

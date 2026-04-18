@@ -10,7 +10,6 @@ import { ThemeToggle } from "@/components/meeting-buddy/theme-toggle";
 import {
   ActionButton,
   Label,
-  Toggle,
   cx,
   inputClass,
   textareaClass,
@@ -20,12 +19,10 @@ type SessionSidebarProps = {
   canJoin: boolean;
   canSaveStandingContext: boolean;
   canStart: boolean;
-  includeTabAudio: boolean;
   isSavingStandingContext: boolean;
   languagePreference: SessionLanguagePreference;
   microphones: AudioInputDevice[];
   onCopySessionId: () => void;
-  onIncludeTabAudioChange: (checked: boolean) => void;
   onJoinSession: () => void;
   onLanguageChange: (value: SessionLanguagePreference) => void;
   onSaveStandingContext: () => void;
@@ -68,12 +65,10 @@ export function SessionSidebar({
   canJoin,
   canSaveStandingContext,
   canStart,
-  includeTabAudio,
   isSavingStandingContext,
   languagePreference,
   microphones,
   onCopySessionId,
-  onIncludeTabAudioChange,
   onJoinSession,
   onLanguageChange,
   onSaveStandingContext,
@@ -137,16 +132,6 @@ export function SessionSidebar({
             ))}
           </select>
         </label>
-
-        <div className="flex items-center justify-between gap-4 rounded-2xl bg-[var(--surface-raised)] px-4 py-3">
-          <div className="min-w-0">
-            <Label>Include tab audio</Label>
-            <p className="mt-1 text-[0.82rem] leading-6 text-[var(--foreground-muted)]">
-              Capture the current browser tab alongside your microphone.
-            </p>
-          </div>
-          <Toggle checked={includeTabAudio} disabled={!canStart} onChange={onIncludeTabAudioChange} />
-        </div>
       </SettingsSection>
 
       <SettingsSection title="Standing context">

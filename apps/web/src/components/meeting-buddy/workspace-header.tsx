@@ -115,7 +115,7 @@ export function WorkspaceHeader({
         {showActivityAction ? (
           <button
             aria-label="Open transcript and note"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl border border-[var(--line)]/70 bg-[var(--surface-input)] px-3 text-sm text-[var(--foreground)] transition hover:bg-[var(--surface-hover)]"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl border border-[var(--line)]/70 bg-[var(--surface-input)] px-3 text-sm text-[var(--foreground)] transition hover:bg-[var(--surface-hover)] lg:hidden"
             onClick={onToggleActivity}
             type="button"
           >
