@@ -17,6 +17,7 @@ import {
   MeterBar,
   SectionLabel,
   StatusBadge,
+  Toggle,
 } from "@/components/meeting-buddy/ui";
 
 type SessionSidebarProps = {
@@ -30,6 +31,7 @@ type SessionSidebarProps = {
   includeTabAudio: boolean;
   languagePreference: SessionLanguagePreference;
   microphones: AudioInputDevice[];
+  onClose?: () => void;
   onCopySessionId: () => void;
   onIncludeTabAudioChange: (checked: boolean) => void;
   onJoinSession: () => void;
@@ -54,6 +56,9 @@ type SessionSidebarProps = {
   title: string;
 };
 
+const inputClass =
+  "h-9 w-full rounded-lg border border-[var(--line)] bg-white/[0.03] px-3 text-sm text-[var(--foreground-strong)] outline-none transition placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/40 focus:bg-white/[0.04] disabled:opacity-50";
+
 export function SessionSidebar({
   audioDiagnostics,
   audioLevel,
@@ -65,6 +70,7 @@ export function SessionSidebar({
   includeTabAudio,
   languagePreference,
   microphones,
+  onClose,
   onCopySessionId,
   onIncludeTabAudioChange,
   onJoinSession,
@@ -89,54 +95,70 @@ export function SessionSidebar({
   title,
 }: SessionSidebarProps) {
   return (
-    <aside
-      className="surface-panel reveal-up min-w-0 rounded-[2rem] px-5 py-6 md:px-6 md:py-6 xl:sticky xl:top-6 xl:self-start"
-      style={{ animationDelay: "180ms" }}
-    >
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <SectionLabel>Session Control</SectionLabel>
+    <div className="flex flex-col">
+      {/* Drawer header — only rendered when used as a mobile drawer */}
+      {onClose ? (
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
+          <span className="text-sm font-semibold text-[var(--foreground-strong)]">Settings</span>
+          <button
+            className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--foreground-muted)] transition hover:bg-white/[0.06] hover:text-[var(--foreground)]"
+            onClick={onClose}
+            type="button"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" viewBox="0 0 24 24">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      ) : null}
+
+      <div className="p-4">
+        {/* ── Status ── */}
+        <div className="pb-4">
+          <div className="flex items-center justify-between gap-2">
+            <SectionLabel>Session</SectionLabel>
             <StatusBadge live={statusTone === "active"} tone={statusTone}>
               {sessionMode === "companion" ? "Companion" : "Capture"}
             </StatusBadge>
           </div>
-          <div>
-            <h2 className="text-[1.7rem] font-semibold tracking-[-0.04em] text-[var(--foreground-strong)]">
-              {sessionHeadline}
-            </h2>
-            <p className="mt-2 text-sm leading-7 text-[var(--foreground-muted)]">{statusMessage}</p>
-          </div>
+          <h2 className="mt-2 text-base font-semibold tracking-tight text-[var(--foreground-strong)]">
+            {sessionHeadline}
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-[var(--foreground-muted)]">{statusMessage}</p>
         </div>
 
-        <dl className="grid gap-x-4 gap-y-5 border-y border-white/[0.08] py-5 sm:grid-cols-2">
+        {/* ── Metrics ── */}
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-2.5 border-y border-[var(--line)] py-3">
           {sessionMetrics.map((metric) => (
             <div key={metric.label} className="min-w-0">
-              <dt className="mono text-[0.62rem] uppercase tracking-[0.28em] text-[var(--foreground-muted)]">
+              <dt className="mono text-[0.52rem] uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
                 {metric.label}
               </dt>
-              <dd className="mt-1 break-words text-sm font-medium text-[var(--foreground)]">{metric.value}</dd>
+              <dd className="mt-0.5 truncate text-xs font-medium text-[var(--foreground)]">
+                {metric.value}
+              </dd>
             </div>
           ))}
         </dl>
-      </div>
 
-      <div className="mt-6 space-y-4">
-        <label className="flex flex-col gap-2">
-          <FieldLabel>Session Title</FieldLabel>
-          <input
-            className="h-12 rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 text-[var(--foreground-strong)] outline-none transition focus:border-[var(--accent)] focus:bg-white/[0.06]"
-            onChange={(event) => onTitleChange(event.target.value)}
-            placeholder="Weekly review"
-            value={title}
-          />
-        </label>
+        {/* ── Configure ── */}
+        <div className="space-y-3 border-b border-[var(--line)] py-4">
+          <SectionLabel>Configure</SectionLabel>
 
-        <div className="grid gap-4 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <label className="flex flex-col gap-2">
+          <label className="flex flex-col gap-1">
+            <FieldLabel>Session Title</FieldLabel>
+            <input
+              className={inputClass}
+              onChange={(event) => onTitleChange(event.target.value)}
+              placeholder="Weekly review"
+              value={title}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1">
             <FieldLabel>Language</FieldLabel>
             <select
-              className="h-12 rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 text-[var(--foreground-strong)] outline-none transition focus:border-[var(--accent)] focus:bg-white/[0.06]"
+              className={inputClass}
               disabled={!canStart}
               onChange={(event) => onLanguageChange(event.target.value as SessionLanguagePreference)}
               value={languagePreference}
@@ -149,10 +171,10 @@ export function SessionSidebar({
             </select>
           </label>
 
-          <label className="flex flex-col gap-2">
+          <label className="flex flex-col gap-1">
             <FieldLabel>Microphone</FieldLabel>
             <select
-              className="h-12 rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 text-[var(--foreground-strong)] outline-none transition focus:border-[var(--accent)] focus:bg-white/[0.06]"
+              className={inputClass}
               disabled={!canStart}
               onChange={(event) => onSelectedMicChange(event.target.value)}
               value={selectedMicId}
@@ -165,123 +187,123 @@ export function SessionSidebar({
               ))}
             </select>
           </label>
-        </div>
 
-        <label className="flex items-center justify-between gap-4 rounded-[1.4rem] border border-white/[0.08] bg-white/[0.03] px-4 py-3">
-          <div>
-            <FieldLabel>Capture Mix</FieldLabel>
-            <p className="mt-1 text-sm text-[var(--foreground)]">
-              {includeTabAudio ? "Microphone + tab audio" : "Microphone only"}
-            </p>
+          <div className="flex items-center justify-between gap-3 py-1">
+            <div>
+              <FieldLabel>Include tab audio</FieldLabel>
+              <p className="mt-0.5 text-xs text-[var(--foreground)]">
+                {includeTabAudio ? "Mic + tab audio" : "Mic only"}
+              </p>
+            </div>
+            <Toggle checked={includeTabAudio} disabled={!canStart} onChange={onIncludeTabAudioChange} />
           </div>
-          <input
-            checked={includeTabAudio}
-            disabled={!canStart}
-            onChange={(event) => onIncludeTabAudioChange(event.target.checked)}
-            type="checkbox"
-          />
-        </label>
-
-        <label className="flex flex-col gap-2">
-          <FieldLabel>Companion Session ID</FieldLabel>
-          <input
-            className="h-12 rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 text-[var(--foreground-strong)] outline-none transition focus:border-[var(--accent)] focus:bg-white/[0.06]"
-            disabled={!canStart}
-            onChange={(event) => onSessionIdInputChange(event.target.value)}
-            placeholder="Paste a live session ID to attach here"
-            value={sessionIdInput}
-          />
-        </label>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <ActionButton disabled={!canJoin} onClick={onJoinSession} type="button">
-            Join session
-          </ActionButton>
-          <ActionButton disabled={!sessionId} onClick={onCopySessionId} type="button">
-            Copy session ID
-          </ActionButton>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <ActionButton disabled={!canStart} onClick={onStartSession} type="button" variant="primary">
+        {/* ── Actions ── */}
+        <div className="grid grid-cols-2 gap-2 border-b border-[var(--line)] py-4">
+          <ActionButton disabled={!canStart} onClick={onStartSession} size="sm" variant="primary">
             Start capture
           </ActionButton>
-          <ActionButton disabled={!canPause} onClick={onPauseSession} type="button">
+          <ActionButton disabled={!canPause} onClick={onPauseSession} size="sm">
             Pause
           </ActionButton>
-          <ActionButton disabled={!canResume} onClick={onResumeSession} type="button">
+          <ActionButton disabled={!canResume} onClick={onResumeSession} size="sm">
             Resume
           </ActionButton>
-          <ActionButton disabled={!canStop} onClick={onStopSession} type="button" variant="ghost">
-            {sessionMode === "companion" ? "Leave session" : "Stop"}
+          <ActionButton disabled={!canStop} onClick={onStopSession} size="sm" variant="ghost">
+            {sessionMode === "companion" ? "Leave" : "Stop"}
           </ActionButton>
         </div>
-      </div>
 
-      <div className="mt-6 border-t border-white/[0.08] pt-6">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <SectionLabel>Mic Level</SectionLabel>
-            <p className="mt-2 truncate text-sm text-[var(--foreground)]">{selectedMicLabel}</p>
+        {/* ── Companion ── */}
+        <div className="space-y-2 border-b border-[var(--line)] py-4">
+          <SectionLabel>Companion</SectionLabel>
+          <label className="flex flex-col gap-1">
+            <FieldLabel>Session ID</FieldLabel>
+            <input
+              className={inputClass}
+              disabled={!canStart}
+              onChange={(event) => onSessionIdInputChange(event.target.value)}
+              placeholder="Paste a session ID"
+              value={sessionIdInput}
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <ActionButton disabled={!canJoin} onClick={onJoinSession} size="sm">
+              Join
+            </ActionButton>
+            <ActionButton disabled={!sessionId} onClick={onCopySessionId} size="sm">
+              Copy ID
+            </ActionButton>
           </div>
-          <span className="mono text-[0.62rem] uppercase tracking-[0.28em] text-[var(--foreground-muted)]">
-            {getSessionLanguageLabel(languagePreference)}
-          </span>
         </div>
-        <div className="mt-4">
-          <MeterBar value={audioLevel} />
+
+        {/* ── Mic Level ── */}
+        <div className="border-b border-[var(--line)] py-4">
+          <div className="flex items-center justify-between gap-2">
+            <SectionLabel>Mic Level</SectionLabel>
+            <span className="mono text-[0.52rem] uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
+              {getSessionLanguageLabel(languagePreference)}
+            </span>
+          </div>
+          <div className="mt-3">
+            <MeterBar value={audioLevel} />
+          </div>
+          <p className="mt-2 truncate text-xs text-[var(--foreground-muted)]">{selectedMicLabel}</p>
+
+          {audioDiagnostics ? (
+            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
+              <div>
+                <dt className="mono text-[0.48rem] uppercase tracking-[0.2em] text-[var(--foreground-muted)]">RMS</dt>
+                <dd className="mt-0.5 mono text-[0.65rem] text-[var(--foreground)]">{audioDiagnostics.rms.toFixed(4)}</dd>
+              </div>
+              <div>
+                <dt className="mono text-[0.48rem] uppercase tracking-[0.2em] text-[var(--foreground-muted)]">Peak</dt>
+                <dd className="mt-0.5 mono text-[0.65rem] text-[var(--foreground)]">{audioDiagnostics.peak.toFixed(4)}</dd>
+              </div>
+              <div>
+                <dt className="mono text-[0.48rem] uppercase tracking-[0.2em] text-[var(--foreground-muted)]">Gate</dt>
+                <dd className="mt-0.5 mono text-[0.65rem] text-[var(--foreground)]">{audioDiagnostics.gateOpen ? "Open" : "Closed"}</dd>
+              </div>
+              <div>
+                <dt className="mono text-[0.48rem] uppercase tracking-[0.2em] text-[var(--foreground-muted)]">Candidates</dt>
+                <dd className="mt-0.5 mono text-[0.65rem] text-[var(--foreground)]">{audioDiagnostics.candidateChunks}</dd>
+              </div>
+              <div>
+                <dt className="mono text-[0.48rem] uppercase tracking-[0.2em] text-[var(--foreground-muted)]">Sent</dt>
+                <dd className="mt-0.5 mono text-[0.65rem] text-[var(--foreground)]">{audioDiagnostics.sentChunks}</dd>
+              </div>
+              <div>
+                <dt className="mono text-[0.48rem] uppercase tracking-[0.2em] text-[var(--foreground-muted)]">Dropped</dt>
+                <dd className="mt-0.5 mono text-[0.65rem] text-[var(--foreground)]">{audioDiagnostics.droppedChunks}</dd>
+              </div>
+            </dl>
+          ) : null}
         </div>
-        {audioDiagnostics ? (
-          <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm text-[var(--foreground-muted)]">
-            <div>
-              <dt className="mono text-[0.58rem] uppercase tracking-[0.24em]">RMS</dt>
-              <dd className="mt-1 text-[var(--foreground)]">{audioDiagnostics.rms.toFixed(4)}</dd>
-            </div>
-            <div>
-              <dt className="mono text-[0.58rem] uppercase tracking-[0.24em]">Peak</dt>
-              <dd className="mt-1 text-[var(--foreground)]">{audioDiagnostics.peak.toFixed(4)}</dd>
-            </div>
-            <div>
-              <dt className="mono text-[0.58rem] uppercase tracking-[0.24em]">Gate</dt>
-              <dd className="mt-1 text-[var(--foreground)]">{audioDiagnostics.gateOpen ? "Open" : "Closed"}</dd>
-            </div>
-            <div>
-              <dt className="mono text-[0.58rem] uppercase tracking-[0.24em]">Candidates</dt>
-              <dd className="mt-1 text-[var(--foreground)]">{audioDiagnostics.candidateChunks}</dd>
-            </div>
-            <div>
-              <dt className="mono text-[0.58rem] uppercase tracking-[0.24em]">Sent</dt>
-              <dd className="mt-1 text-[var(--foreground)]">{audioDiagnostics.sentChunks}</dd>
-            </div>
-            <div>
-              <dt className="mono text-[0.58rem] uppercase tracking-[0.24em]">Dropped</dt>
-              <dd className="mt-1 text-[var(--foreground)]">{audioDiagnostics.droppedChunks}</dd>
-            </div>
-          </dl>
+
+        {/* ── Session Details ── */}
+        {sessionDetails.length > 0 ? (
+          <div className="pt-4">
+            <SectionLabel>Details</SectionLabel>
+            <dl className="mt-2 space-y-2">
+              {sessionDetails.map((detail) => (
+                <div key={`${detail.label}-${detail.value}`}>
+                  <dt className="mono text-[0.48rem] uppercase tracking-[0.2em] text-[var(--foreground-muted)]">
+                    {detail.label}
+                  </dt>
+                  <dd
+                    className={`mt-0.5 break-words text-xs leading-5 text-[var(--foreground)] ${
+                      detail.mono ? "mono text-[0.65rem]" : ""
+                    }`}
+                  >
+                    {detail.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         ) : null}
       </div>
-
-      {sessionDetails.length > 0 ? (
-        <div className="mt-6 border-t border-white/[0.08] pt-6">
-          <SectionLabel>Session Details</SectionLabel>
-          <dl className="mt-4 space-y-4">
-            {sessionDetails.map((detail) => (
-              <div key={`${detail.label}-${detail.value}`}>
-                <dt className="mono text-[0.62rem] uppercase tracking-[0.28em] text-[var(--foreground-muted)]">
-                  {detail.label}
-                </dt>
-                <dd
-                  className={`mt-1 break-words text-sm leading-6 text-[var(--foreground)] ${
-                    detail.mono ? "mono text-[0.74rem]" : ""
-                  }`}
-                >
-                  {detail.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      ) : null}
-    </aside>
+    </div>
   );
 }

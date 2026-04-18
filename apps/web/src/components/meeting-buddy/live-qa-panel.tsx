@@ -2,7 +2,6 @@ import { formatAskedAt } from "@/components/meeting-buddy/format";
 import {
   ActionButton,
   SectionLabel,
-  StatusBadge,
 } from "@/components/meeting-buddy/ui";
 import type { QuestionAnswer } from "@/components/meeting-buddy/types";
 
@@ -28,89 +27,83 @@ export function LiveQaPanel({
   questionAnswers,
 }: LiveQaPanelProps) {
   return (
-    <section
-      className="surface-panel reveal-up min-w-0 overflow-hidden rounded-[2rem] px-5 py-6 md:px-7 md:py-7"
-      style={{ animationDelay: "120ms" }}
-    >
-      <div className="flex flex-col gap-4 border-b border-white/[0.08] pb-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div className="max-w-3xl">
-            <SectionLabel>Live Q&amp;A</SectionLabel>
-            <h2 className="mt-3 text-[2rem] font-semibold tracking-[-0.04em] text-[var(--foreground-strong)] md:text-[3.1rem] md:leading-[0.94]">
-              Ask while the meeting is still moving.
-            </h2>
-          </div>
-          <StatusBadge live={Boolean(currentAnswer)} tone={currentAnswer ? "active" : "neutral"}>
-            {currentAnswer ? "Streaming reply" : canAsk ? "Ready for questions" : "Waiting for session"}
-          </StatusBadge>
-        </div>
-        <p className="max-w-2xl text-sm leading-7 text-[var(--foreground-muted)] md:text-base">{askHint}</p>
+    <section className="p-5">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3">
+        <SectionLabel>Ask a question</SectionLabel>
+        <span className="mono text-[0.52rem] uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
+          {canAsk ? "Session active" : "Waiting for session"}
+        </span>
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.78fr)]">
-        <div className="min-w-0">
-          <label className="block">
-            <span className="mono text-[0.62rem] uppercase tracking-[0.32em] text-[var(--foreground-muted)]">
-              Question
-            </span>
-            <textarea
-              className="mt-3 min-h-56 w-full rounded-[1.75rem] border border-white/[0.08] bg-white/[0.04] px-5 py-5 text-lg leading-8 text-[var(--foreground-strong)] outline-none transition focus:border-[var(--accent)] focus:bg-white/[0.06] md:min-h-72"
-              disabled={!canAsk}
-              onChange={(event) => onQuestionChange(event.target.value)}
-              placeholder="What changed, what matters, and what should I remember later?"
-              value={question}
-            />
-          </label>
+      {/* Question input */}
+      <div className="mt-3">
+        <textarea
+          className="w-full resize-none rounded-xl border border-[var(--line)] bg-white/[0.03] px-4 py-3 text-sm leading-6 text-[var(--foreground-strong)] outline-none transition placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/40 focus:bg-white/[0.04] disabled:opacity-50"
+          disabled={!canAsk}
+          onChange={(event) => onQuestionChange(event.target.value)}
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+              event.preventDefault();
+              if (canAsk && question.trim() && !isAsking) {
+                onSendQuestion();
+              }
+            }
+          }}
+          placeholder="What changed, what matters, what should I remember?"
+          rows={3}
+          value={question}
+        />
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <p className="text-xs text-[var(--foreground-muted)]">{askHint}</p>
+          <ActionButton
+            className="flex-shrink-0"
+            disabled={!canAsk || !question.trim() || isAsking}
+            onClick={onSendQuestion}
+            size="sm"
+            type="button"
+            variant="primary"
+          >
+            {isAsking ? "Asking..." : "Ask"}
+          </ActionButton>
+        </div>
+      </div>
 
-          <div className="mt-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <p className="text-sm leading-7 text-[var(--foreground-muted)]">
-              Answers stream into this workspace in real time, so you can keep the thread of the meeting.
-            </p>
-            <ActionButton
-              className="w-full md:w-auto"
-              disabled={!canAsk || !question.trim() || isAsking}
-              onClick={onSendQuestion}
-              type="button"
-              variant="primary"
-            >
-              {isAsking ? "Asking..." : "Ask buddy"}
-            </ActionButton>
+      {/* Streaming reply */}
+      {(isAsking || currentAnswer) ? (
+        <div className="mt-4 rounded-xl border border-[var(--accent)]/20 bg-[var(--accent-soft)]/30 p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="live-dot" />
+            <SectionLabel className="text-[var(--accent-text)]">Replying</SectionLabel>
           </div>
+          <p className="whitespace-pre-wrap text-sm leading-7 text-[var(--foreground-strong)]">
+            {currentAnswer || "Thinking..."}
+          </p>
+        </div>
+      ) : null}
 
-          <div className="mt-6 rounded-[1.75rem] border border-white/[0.08] bg-black/[0.18] p-5 md:p-6">
-            <SectionLabel>Current Reply</SectionLabel>
-            <p className="mt-4 min-h-40 whitespace-pre-wrap text-base leading-8 text-[var(--foreground-strong)]">
-              {currentAnswer || "No live answer in progress yet."}
-            </p>
+      {/* Q&A History */}
+      {questionAnswers.length > 0 ? (
+        <div className="mt-5 border-t border-[var(--line)] pt-4">
+          <SectionLabel>Previous answers</SectionLabel>
+          <div className="mt-3 max-h-[28rem] space-y-4 overflow-auto pr-1">
+            {questionAnswers.map((entry, index) => (
+              <article
+                className="border-b border-[var(--line)] pb-3 last:border-b-0 last:pb-0"
+                key={`${entry.question}-${index}`}
+              >
+                <p className="text-sm font-medium text-[var(--foreground-strong)]">{entry.question}</p>
+                <p className="mono mt-0.5 text-[0.52rem] uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
+                  {formatAskedAt(entry.askedAt)}
+                </p>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--foreground-muted)]">
+                  {entry.answer}
+                </p>
+              </article>
+            ))}
           </div>
         </div>
-
-        <aside className="min-w-0 border-t border-white/[0.08] pt-6 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
-          <SectionLabel>Recent Q&amp;A</SectionLabel>
-          <div className="mt-4 max-h-[36rem] space-y-4 overflow-auto pr-1">
-            {questionAnswers.length > 0 ? (
-              questionAnswers.map((entry, index) => (
-                <article
-                  className="border-b border-white/[0.08] pb-4 last:border-b-0 last:pb-0"
-                  key={`${entry.question}-${index}`}
-                >
-                  <p className="text-sm font-medium text-[var(--foreground-strong)]">{entry.question}</p>
-                  <p className="mt-1 mono text-[0.62rem] uppercase tracking-[0.28em] text-[var(--foreground-muted)]">
-                    {formatAskedAt(entry.askedAt)}
-                  </p>
-                  <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[var(--foreground-muted)]">
-                    {entry.answer}
-                  </p>
-                </article>
-              ))
-            ) : (
-              <p className="text-sm leading-7 text-[var(--foreground-muted)]">
-                Once you ask a live question, the exchange will stay here for quick reference.
-              </p>
-            )}
-          </div>
-        </aside>
-      </div>
+      ) : null}
     </section>
   );
 }

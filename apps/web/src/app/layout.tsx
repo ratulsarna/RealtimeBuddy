@@ -28,7 +28,7 @@ export default function RootLayout({
       lang="en"
       className={`${spaceGrotesk.variable} ${plexMono.variable} h-full antialiased`}
     >
-      <body className="app-shell">{children}</body>
+      <body className="h-full overflow-hidden">{children}</body>
     </html>
   );
 }

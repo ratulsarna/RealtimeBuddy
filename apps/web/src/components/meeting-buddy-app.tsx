@@ -69,6 +69,7 @@ export function MeetingBuddyApp({
   const [captureClientCount, setCaptureClientCount] = useState(0);
   const [companionClientCount, setCompanionClientCount] = useState(0);
   const [isAsking, setIsAsking] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const socketRef = useRef<WebSocket | null>(null);
   const captureRef = useRef<AudioCaptureHandle | null>(null);
@@ -99,6 +100,16 @@ export function MeetingBuddyApp({
   useEffect(() => {
     connectionStateRef.current = connectionState;
   }, [connectionState]);
+
+  // Close drawer on Escape
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSidebarOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [sidebarOpen]);
 
   useEffect(() => {
     if (window.location.hostname === "0.0.0.0") {
@@ -793,8 +804,8 @@ export function MeetingBuddyApp({
     (connectionState === "live" || connectionState === "paused");
 
   const askHint = canAsk
-    ? "This workspace stays useful during the meeting: ask for decisions, loose ends, next steps, or what just changed."
-    : "Start a local capture or join a live session first, then ask here without leaving the conversation.";
+    ? "Ask about decisions, loose ends, next steps, or what just changed."
+    : "Start a session first, then ask questions here.";
 
   const sessionMetrics: SessionMetric[] = [
     { label: "State", value: connectionStateLabel },
@@ -802,7 +813,7 @@ export function MeetingBuddyApp({
     { label: "Language", value: languageLabel },
     {
       label: "Clients",
-      value: `${captureClientCount} capture / ${companionClientCount} companion`,
+      value: `${captureClientCount} / ${companionClientCount}`,
     },
   ];
 
@@ -845,83 +856,85 @@ export function MeetingBuddyApp({
       : null,
   ].filter((detail): detail is SessionDetail => Boolean(detail));
 
+  const sidebarProps = {
+    audioDiagnostics,
+    audioLevel,
+    canJoin,
+    canPause,
+    canResume,
+    canStart,
+    canStop,
+    includeTabAudio,
+    languagePreference,
+    microphones,
+    onCopySessionId: () => { void copySessionId(); },
+    onIncludeTabAudioChange: setIncludeTabAudio,
+    onJoinSession: () => { void joinSession(); },
+    onLanguageChange: setLanguagePreference,
+    onPauseSession: pauseSession,
+    onResumeSession: resumeSession,
+    onSelectedMicChange: setSelectedMicId,
+    onSessionIdInputChange: setSessionIdInput,
+    onStartSession: startSession,
+    onStopSession: stopSession,
+    onTitleChange: setTitle,
+    selectedMicId,
+    selectedMicLabel,
+    sessionDetails,
+    sessionHeadline,
+    sessionId,
+    sessionIdInput,
+    sessionMetrics,
+    sessionMode,
+    statusMessage,
+    statusTone,
+    title,
+  } as const;
+
   return (
-    <main className="grain relative min-h-screen overflow-hidden px-4 py-4 md:px-6 md:py-6">
-      <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 md:gap-6">
-        <WorkspaceHeader
-          captureClientCount={captureClientCount}
-          companionClientCount={companionClientCount}
-          connectionStateLabel={connectionStateLabel}
-          languageLabel={languageLabel}
-          selectedMicLabel={selectedMicLabel}
-          sessionHeadline={sessionHeadline}
-          sessionId={sessionId}
-          sessionModeLabel={sessionModeLabel}
-          statusMessage={statusMessage}
-          statusTone={statusTone}
-        />
+    <main className="flex h-screen flex-col overflow-hidden">
+      {/* ── Top Bar ── */}
+      <WorkspaceHeader
+        audioLevel={audioLevel}
+        canPause={canPause}
+        canResume={canResume}
+        canStart={canStart}
+        canStop={canStop}
+        connectionStateLabel={connectionStateLabel}
+        onPauseSession={pauseSession}
+        onResumeSession={resumeSession}
+        onStartSession={startSession}
+        onStopSession={stopSession}
+        onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+        onTitleChange={setTitle}
+        sessionMode={sessionMode}
+        statusTone={statusTone}
+        title={title}
+      />
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(21rem,0.9fr)] md:gap-6">
-          <div className="min-w-0">
-            <LiveQaPanel
-              askHint={askHint}
-              canAsk={canAsk}
-              currentAnswer={currentAnswer}
-              isAsking={isAsking}
-              onQuestionChange={setQuestion}
-              onSendQuestion={sendQuestion}
-              question={question}
-              questionAnswers={questionAnswers}
-            />
-          </div>
-
-          <div className="min-w-0">
-            <SessionSidebar
-              audioDiagnostics={audioDiagnostics}
-              audioLevel={audioLevel}
-              canJoin={canJoin}
-              canPause={canPause}
-              canResume={canResume}
-              canStart={canStart}
-              canStop={canStop}
-              includeTabAudio={includeTabAudio}
-              languagePreference={languagePreference}
-              microphones={microphones}
-              onCopySessionId={() => {
-                void copySessionId();
-              }}
-              onIncludeTabAudioChange={setIncludeTabAudio}
-              onJoinSession={() => {
-                void joinSession();
-              }}
-              onLanguageChange={setLanguagePreference}
-              onPauseSession={pauseSession}
-              onResumeSession={resumeSession}
-              onSelectedMicChange={setSelectedMicId}
-              onSessionIdInputChange={setSessionIdInput}
-              onStartSession={startSession}
-              onStopSession={stopSession}
-              onTitleChange={setTitle}
-              selectedMicId={selectedMicId}
-              selectedMicLabel={selectedMicLabel}
-              sessionDetails={sessionDetails}
-              sessionHeadline={sessionHeadline}
-              sessionId={sessionId}
-              sessionIdInput={sessionIdInput}
-              sessionMetrics={sessionMetrics}
-              sessionMode={sessionMode}
-              statusMessage={statusMessage}
-              statusTone={statusTone}
-              title={title}
-            />
-          </div>
+      {/* ── Body ── */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Desktop sidebar — persistent left column */}
+        <div className="hidden w-72 flex-shrink-0 overflow-y-auto border-r border-[var(--panel-border)] bg-[var(--panel-bg)] xl:block">
+          <SessionSidebar {...sidebarProps} />
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.18fr)_minmax(20rem,0.82fr)] md:gap-6">
-          <div className="min-w-0">
-            <NotePanel noteMarkdown={noteMarkdown} notePathRelative={notePathRelative} />
-          </div>
-          <div className="min-w-0">
+        {/* Center column — Q&A + Notes (+ Transcript on mobile) */}
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          <LiveQaPanel
+            askHint={askHint}
+            canAsk={canAsk}
+            currentAnswer={currentAnswer}
+            isAsking={isAsking}
+            onQuestionChange={setQuestion}
+            onSendQuestion={sendQuestion}
+            question={question}
+            questionAnswers={questionAnswers}
+          />
+          <NotePanel noteMarkdown={noteMarkdown} notePathRelative={notePathRelative} />
+
+          {/* Transcript stacked below on mobile only */}
+          <div className="border-t border-[var(--line)] md:hidden">
             <TranscriptPanel
               partialTranscript={partialTranscript}
               provisionalEntries={provisionalEntries}
@@ -929,7 +942,29 @@ export function MeetingBuddyApp({
             />
           </div>
         </div>
+
+        {/* Transcript column — tablet+ */}
+        <div className="hidden w-80 flex-shrink-0 overflow-y-auto border-l border-[var(--panel-border)] md:block xl:w-96">
+          <TranscriptPanel
+            partialTranscript={partialTranscript}
+            provisionalEntries={provisionalEntries}
+            transcriptEntries={transcriptEntries}
+          />
+        </div>
       </div>
+
+      {/* ── Mobile/Tablet drawer sidebar ── */}
+      {sidebarOpen ? (
+        <div className="fixed inset-0 z-50 xl:hidden" onClick={() => setSidebarOpen(false)}>
+          <div className="drawer-backdrop absolute inset-0" />
+          <aside
+            className="slide-in-right absolute bottom-0 right-0 top-0 w-80 overflow-y-auto border-l border-[var(--panel-border)] bg-[var(--background)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <SessionSidebar {...sidebarProps} onClose={() => setSidebarOpen(false)} />
+          </aside>
+        </div>
+      ) : null}
     </main>
   );
 }
