@@ -13,6 +13,10 @@ test("buildBuddyDeveloperInstructions keeps stable Buddy rules and omits meeting
   assert.match(instructions, /RESPONSE_MODE: buddy_event/);
   assert.match(instructions, /RESPONSE_MODE: user_question/);
   assert.match(instructions, /Buddy JSON schema/);
+  assert.match(instructions, /Most `RESPONSE_MODE: buddy_event` turns should return the no-op JSON object\./);
+  assert.match(instructions, /usually the no-op JSON object/);
+  assert.match(instructions, /Do not treat every transcript update as worthy of a visible response\./);
+  assert.match(instructions, /Default to the no-op object unless the newest information is materially new, timely, and useful/);
   assert.doesNotMatch(instructions, /Static user seed:/);
   assert.doesNotMatch(instructions, /Dynamic meeting seed:/);
   assert.doesNotMatch(instructions, /Meeting startup context:/);

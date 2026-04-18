@@ -1137,7 +1137,7 @@ export class MeetingSession {
     const recentSurfaceInstruction =
       recentSurfaceAgeMs !== null && recentSurfaceAgeMs < BUDDY_RECENT_SURFACE_WINDOW_MS
         ? `A Buddy card was already surfaced ${Math.max(1, Math.round(recentSurfaceAgeMs / 1000))} seconds ago. Stay extra conservative and only surface again if this new transcript creates a meaningfully new, timely intervention.`
-        : "If the new transcript is not newly actionable, return the required no-op JSON.";
+        : "Most transcript updates should return the required no-op JSON. Surface only if this transcript adds something materially new, timely, and useful right now.";
 
     return [
       "New committed transcript arrived in the same live meeting thread.",
