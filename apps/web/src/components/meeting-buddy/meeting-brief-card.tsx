@@ -9,20 +9,16 @@ import {
 } from "@/components/meeting-buddy/ui";
 
 type MeetingBriefCardProps = {
-  staticUserSeed: string;
   meetingSeed: string;
   canStart: boolean;
-  onStaticUserSeedChange: (value: string) => void;
   onMeetingSeedChange: (value: string) => void;
   onStartSession: () => void;
   onOpenAdvanced: () => void;
 };
 
 export function MeetingBriefCard({
-  staticUserSeed,
   meetingSeed,
   canStart,
-  onStaticUserSeedChange,
   onMeetingSeedChange,
   onStartSession,
   onOpenAdvanced,
@@ -69,26 +65,6 @@ export function MeetingBriefCard({
             />
             <p className="text-[0.72rem] text-[var(--foreground-muted)]">
               What kind of meeting, what outcome you want, and what Buddy should watch for.
-            </p>
-          </label>
-
-          <label className="flex flex-col gap-1.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <FieldLabel>Your standing context</FieldLabel>
-              <span className="mono text-[0.52rem] uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
-                Optional
-              </span>
-            </div>
-            <textarea
-              className={cx(textareaClass, "min-h-[4.5rem]")}
-              disabled={!canStart}
-              onChange={(event) => onStaticUserSeedChange(event.target.value)}
-              placeholder="Vault path, preferred tools, how you like Buddy to behave across meetings."
-              rows={2}
-              value={staticUserSeed}
-            />
-            <p className="text-[0.72rem] text-[var(--foreground-muted)]">
-              Durable context that usually stays true meeting to meeting.
             </p>
           </label>
         </div>

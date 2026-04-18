@@ -893,6 +893,7 @@ export function MeetingBuddyApp({
     onSelectedMicChange: setSelectedMicId,
     onSessionIdInputChange: setSessionIdInput,
     onStartSession: startSession,
+    onStaticUserSeedChange: setStaticUserSeed,
     onStopSession: stopSession,
     onTitleChange: setTitle,
     selectedMicId,
@@ -903,6 +904,7 @@ export function MeetingBuddyApp({
     sessionIdInput,
     sessionMetrics,
     sessionMode,
+    staticUserSeed,
     statusMessage,
     statusTone,
     title,
@@ -949,8 +951,6 @@ export function MeetingBuddyApp({
                 onMeetingSeedChange={setMeetingSeed}
                 onOpenAdvanced={() => setSidebarOpen(true)}
                 onStartSession={startSession}
-                onStaticUserSeedChange={setStaticUserSeed}
-                staticUserSeed={staticUserSeed}
               />
             </div>
           ) : (

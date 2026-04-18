@@ -18,7 +18,9 @@ import {
   SectionLabel,
   StatusBadge,
   Toggle,
+  cx,
   inputClass,
+  textareaClass,
 } from "@/components/meeting-buddy/ui";
 
 type SessionSidebarProps = {
@@ -42,6 +44,7 @@ type SessionSidebarProps = {
   onSelectedMicChange: (value: string) => void;
   onSessionIdInputChange: (value: string) => void;
   onStartSession: () => void;
+  onStaticUserSeedChange: (value: string) => void;
   onStopSession: () => void;
   onTitleChange: (value: string) => void;
   selectedMicId: string;
@@ -52,6 +55,7 @@ type SessionSidebarProps = {
   sessionIdInput: string;
   sessionMetrics: SessionMetric[];
   sessionMode: SessionMode;
+  staticUserSeed: string;
   statusMessage: string;
   statusTone: "active" | "warning" | "neutral";
   title: string;
@@ -78,6 +82,7 @@ export function SessionSidebar({
   onSelectedMicChange,
   onSessionIdInputChange,
   onStartSession,
+  onStaticUserSeedChange,
   onStopSession,
   onTitleChange,
   selectedMicId,
@@ -88,6 +93,7 @@ export function SessionSidebar({
   sessionIdInput,
   sessionMetrics,
   sessionMode,
+  staticUserSeed,
   statusMessage,
   statusTone,
   title,
@@ -195,6 +201,21 @@ export function SessionSidebar({
             </div>
             <Toggle checked={includeTabAudio} disabled={!canStart} onChange={onIncludeTabAudioChange} />
           </div>
+
+          <label className="flex flex-col gap-1">
+            <FieldLabel>Standing context</FieldLabel>
+            <textarea
+              className={cx(textareaClass, "min-h-[4.5rem]")}
+              disabled={!canStart}
+              onChange={(event) => onStaticUserSeedChange(event.target.value)}
+              placeholder="Vault path, preferred tools, how you like Buddy to behave across meetings."
+              rows={2}
+              value={staticUserSeed}
+            />
+            <p className="text-[0.72rem] text-[var(--foreground-muted)]">
+              Durable context that usually stays true meeting to meeting.
+            </p>
+          </label>
         </div>
 
         {/* ── Actions ── */}
