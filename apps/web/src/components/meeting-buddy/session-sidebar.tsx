@@ -200,7 +200,7 @@ export function SessionSidebar({
         {/* ── Actions ── */}
         <div className="grid grid-cols-2 gap-2 border-b border-[var(--line)] py-4">
           <ActionButton disabled={!canStart} onClick={onStartSession} size="sm" variant="primary">
-            Start capture
+            Start
           </ActionButton>
           <ActionButton disabled={!canPause} onClick={onPauseSession} size="sm">
             Pause

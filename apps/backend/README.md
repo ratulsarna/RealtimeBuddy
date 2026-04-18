@@ -18,12 +18,14 @@ cp .env.example .env.local
 Important values:
 
 - `ELEVENLABS_API_KEY`
-- `OBSIDIAN_VAULT_PATH`
 - `CODEX_VAULT_PATH`
 - `CODEX_MODEL`
 - `CODEX_SANDBOX_MODE`
 - `CODEX_APPROVAL_POLICY`
 - `BACKEND_AUTH_TOKEN`
+
+For the demo backend, `CODEX_VAULT_PATH` is the single vault root. Buddy writes notes under
+`CODEX_VAULT_PATH/Notes/`, and Codex reads from that same vault tree.
 
 ## Run
 

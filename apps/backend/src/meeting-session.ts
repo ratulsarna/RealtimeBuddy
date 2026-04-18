@@ -125,7 +125,7 @@ export class MeetingSession {
   private readonly startedAt = new Date();
   private lastStatusMessage = "Preparing session...";
   private readonly vaultPath = resolveConfiguredPath(
-    process.env.OBSIDIAN_VAULT_PATH,
+    process.env.CODEX_VAULT_PATH,
     DEFAULT_VAULT_PATH
   );
   private readonly notePath: string;
@@ -172,10 +172,7 @@ export class MeetingSession {
     this.meetingSeed = this.normalizeSeed(options.meetingSeed);
     this.sendEvent = options.sendEvent;
     const safeFileTitle = this.sanitizeTitleForFileName(this.title);
-    this.codexWorkingDirectory = resolveConfiguredPath(
-      process.env.CODEX_VAULT_PATH,
-      this.vaultPath
-    );
+    this.codexWorkingDirectory = this.vaultPath;
 
     const noteFolder = path.join(this.vaultPath, "Notes", "Dated", this.dateStamp(this.startedAt));
     const noteFileName = `${safeFileTitle} - ${this.fileStamp(this.startedAt)}.md`;
@@ -587,11 +584,6 @@ export class MeetingSession {
   private currentMarkdown() {
     return buildMeetingNote({
       title: this.title,
-      startedAt: this.formatDateTime(this.startedAt),
-      includeTabAudio: this.includeTabAudio,
-      transcriptSegments: this.transcriptSegments,
-      provisionalSegments: this.provisionalSegments,
-      partialTranscript: this.partialTranscript,
       questionAnswers: this.questionAnswers,
     });
   }

@@ -27,6 +27,14 @@ Success condition:
 - Buddy occasionally helps at the right time
 - the UI communicates presence even when Buddy is quiet
 
+## Demo storage model
+
+For the hackathon demo, `CODEX_VAULT_PATH` is the single source of truth.
+
+- Codex context reads from `CODEX_VAULT_PATH`
+- meeting notes are written under `CODEX_VAULT_PATH/Notes/`
+- the persisted note artifact is Buddy Q&A only, not a transcript-heavy meeting dump
+
 ## Build order
 
 Do not start with UI.

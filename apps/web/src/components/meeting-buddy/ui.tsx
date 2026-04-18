@@ -109,7 +109,7 @@ export function ActionButton({
   return (
     <button
       className={cx(
-        "inline-flex items-center justify-center font-medium transition duration-150 disabled:opacity-40 disabled:pointer-events-none",
+        "inline-flex items-center justify-center whitespace-nowrap font-medium transition duration-150 disabled:opacity-40 disabled:pointer-events-none",
         variantClass,
         sizeClass,
         className
