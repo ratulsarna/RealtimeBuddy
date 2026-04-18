@@ -168,7 +168,7 @@ export function BuddyCard({
         </span>
       </header>
 
-      <h3 className="mt-2 text-[0.95rem] font-semibold leading-snug text-[var(--foreground-strong)]">
+      <h3 className="display mt-2 text-[1.02rem] font-medium leading-snug tracking-[-0.01em] text-[var(--foreground-strong)]">
         {event.title}
       </h3>
 
@@ -197,7 +197,7 @@ export function BuddyCard({
               Ask it
             </button>
             <button
-              className="inline-flex h-7 items-center justify-center rounded-md border border-[var(--line)] bg-white/[0.02] px-2.5 text-[0.72rem] font-medium text-[var(--foreground)] transition hover:bg-white/[0.06]"
+              className="inline-flex h-7 items-center justify-center rounded-md border border-[var(--line)] bg-[var(--surface-raised)] px-2.5 text-[0.72rem] font-medium text-[var(--foreground)] transition hover:bg-[var(--surface-hover)]"
               onClick={() => void handleCopy()}
               type="button"
             >

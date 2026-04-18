@@ -94,7 +94,7 @@ function EmptyState({ state }: { state: BuddyState }) {
   if (state === "listening") {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 py-12 text-center">
-        <span className="relative inline-flex h-12 w-12 items-center justify-center rounded-full border border-[var(--panel-border)] bg-white/[0.02]">
+        <span className="relative inline-flex h-12 w-12 items-center justify-center rounded-full border border-[var(--panel-border)] bg-[var(--surface-raised)]">
           <span className="h-3 w-3 rounded-full bg-[var(--accent)] buddy-pulse-ring" />
         </span>
         <div>
@@ -112,7 +112,7 @@ function EmptyState({ state }: { state: BuddyState }) {
   if (state === "warming") {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 py-12 text-center">
-        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--panel-border)] bg-white/[0.02]">
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--panel-border)] bg-[var(--surface-raised)]">
           <span className="h-2 w-2 rounded-full bg-[var(--accent)] live-dot" />
         </span>
         <p className="text-sm text-[var(--foreground-muted)]">

@@ -979,7 +979,7 @@ export function MeetingBuddyApp({
               transcriptEntries={transcriptEntries}
             />
           </div>
-          <div className="max-h-64 flex-shrink-0 overflow-y-auto border-t border-[var(--panel-border)] bg-white/[0.015]">
+          <div className="max-h-64 flex-shrink-0 overflow-y-auto border-t border-[var(--panel-border)] bg-[var(--surface-raised)]">
             <NotePanel noteMarkdown={noteMarkdown} notePathRelative={notePathRelative} />
           </div>
         </div>

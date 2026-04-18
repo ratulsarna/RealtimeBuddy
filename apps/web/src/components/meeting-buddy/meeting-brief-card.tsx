@@ -27,14 +27,14 @@ export function MeetingBriefCard({
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
       {/* Hero */}
       <div className="flex flex-col items-start gap-3">
-        <span className="inline-flex items-center gap-2 rounded-full border border-[var(--panel-border)] bg-white/[0.03] px-3 py-1">
+        <span className="inline-flex items-center gap-2 rounded-full border border-[var(--panel-border)] bg-[var(--surface-input)] px-3 py-1">
           <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--glow)]" />
           <span className="mono text-[0.58rem] uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
             Pre-meeting brief
           </span>
         </span>
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground-strong)]">
+          <h1 className="display text-[2rem] font-medium leading-[1.1] tracking-[-0.02em] text-[var(--foreground-strong)]">
             Brief Buddy before you start.
           </h1>
           <p className="mt-2 text-sm leading-6 text-[var(--foreground)]">
@@ -90,7 +90,7 @@ export function MeetingBriefCard({
       </div>
 
       {/* What Buddy will do */}
-      <div className="rounded-xl border border-[var(--panel-border)] bg-white/[0.015] px-4 py-3">
+      <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--surface-raised)] px-4 py-3">
         <SectionLabel>What Buddy will do</SectionLabel>
         <ul className="mt-2 grid gap-1.5 text-xs leading-6 text-[var(--foreground)] sm:grid-cols-2">
           <li>Suggest a timely question</li>

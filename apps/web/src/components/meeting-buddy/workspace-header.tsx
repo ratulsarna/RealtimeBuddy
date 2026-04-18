@@ -1,4 +1,5 @@
 import type { SessionMode } from "@/components/meeting-buddy/types";
+import { ThemeToggle } from "@/components/meeting-buddy/theme-toggle";
 import {
   ActionButton,
   MeterBar,
@@ -45,7 +46,7 @@ export function WorkspaceHeader({
       {/* Logo */}
       <div className="flex items-center gap-2.5 flex-shrink-0">
         <span className="h-2 w-2 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--glow)]" />
-        <span className="text-sm font-semibold tracking-tight text-[var(--foreground-strong)]">
+        <span className="display text-[0.98rem] font-medium tracking-tight text-[var(--foreground-strong)]">
           RealtimeBuddy
         </span>
       </div>
@@ -71,6 +72,9 @@ export function WorkspaceHeader({
       <div className="hidden w-16 md:block">
         <MeterBar compact value={audioLevel} />
       </div>
+
+      {/* Theme toggle */}
+      <ThemeToggle />
 
       {/* Action buttons */}
       <div className="flex items-center gap-1.5">
@@ -98,7 +102,7 @@ export function WorkspaceHeader({
 
       {/* Sidebar toggle - visible below xl */}
       <button
-        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-[var(--foreground-muted)] transition hover:bg-white/[0.06] hover:text-[var(--foreground)] xl:hidden"
+        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-[var(--foreground-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] xl:hidden"
         onClick={onToggleSidebar}
         type="button"
       >

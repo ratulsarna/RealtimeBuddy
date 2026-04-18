@@ -73,7 +73,7 @@ export function BuddyStatusStrip({
       : "text-[var(--foreground)]";
 
   return (
-    <div className="relative flex items-center justify-between gap-3 rounded-xl border border-[var(--panel-border)] bg-white/[0.02] px-4 py-2.5">
+    <div className="relative flex items-center justify-between gap-3 rounded-xl border border-[var(--panel-border)] bg-[var(--surface-raised)] px-4 py-2.5">
       <div className="flex min-w-0 items-center gap-3">
         <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
           <span className={cx("h-2 w-2 rounded-full", dotClass)} />
@@ -86,7 +86,7 @@ export function BuddyStatusStrip({
 
       <div className="flex flex-shrink-0 items-center gap-2">
         {eventCount > 0 ? (
-          <span className="mono inline-flex h-6 items-center rounded-full bg-white/[0.04] px-2 text-[0.6rem] uppercase tracking-[0.18em] text-[var(--foreground)]">
+          <span className="mono inline-flex h-6 items-center rounded-full bg-[var(--surface-raised-strong)] px-2 text-[0.6rem] uppercase tracking-[0.18em] text-[var(--foreground)]">
             {eventCount} card{eventCount === 1 ? "" : "s"}
           </span>
         ) : null}
@@ -94,8 +94,8 @@ export function BuddyStatusStrip({
         {hasBrief ? (
           <button
             className={cx(
-              "inline-flex h-6 items-center gap-1.5 rounded-full border border-[var(--line)] bg-white/[0.03] px-2.5 text-[0.6rem] uppercase tracking-[0.18em] text-[var(--foreground)] transition hover:bg-white/[0.06]",
-              briefOpen && "bg-white/[0.06]"
+              "inline-flex h-6 items-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surface-input)] px-2.5 text-[0.6rem] uppercase tracking-[0.18em] text-[var(--foreground)] transition hover:bg-[var(--surface-hover)]",
+              briefOpen && "bg-[var(--surface-raised-strong)]"
             )}
             onClick={() => setBriefOpen((prev) => !prev)}
             type="button"

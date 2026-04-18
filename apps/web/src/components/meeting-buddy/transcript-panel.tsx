@@ -48,7 +48,7 @@ export function TranscriptPanel({
             .reverse()
             .map((entry) => (
               <div
-                className="rounded-lg bg-white/[0.02] px-3 py-2"
+                className="rounded-lg bg-[var(--surface-raised)] px-3 py-2"
                 key={entry.id}
               >
                 <p className="text-sm leading-6 text-[var(--foreground)]">{entry.text}</p>

@@ -9,10 +9,10 @@ export function cx(...classes: Array<string | false | null | undefined>) {
 }
 
 export const inputClass =
-  "h-9 w-full rounded-lg border border-[var(--line)] bg-white/[0.03] px-3 text-sm text-[var(--foreground-strong)] outline-none transition placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/40 focus:bg-white/[0.04] disabled:opacity-50";
+  "h-9 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-input)] px-3 text-sm text-[var(--foreground-strong)] outline-none transition placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/40 focus:bg-[var(--surface-input-focus)] disabled:opacity-50";
 
 export const textareaClass =
-  "w-full resize-none rounded-lg border border-[var(--line)] bg-white/[0.03] px-3 py-2 text-sm leading-5 text-[var(--foreground-strong)] outline-none transition placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/40 focus:bg-white/[0.04] disabled:opacity-50";
+  "w-full resize-none rounded-lg border border-[var(--line)] bg-[var(--surface-input)] px-3 py-2 text-sm leading-5 text-[var(--foreground-strong)] outline-none transition placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/40 focus:bg-[var(--surface-input-focus)] disabled:opacity-50";
 
 export function SectionLabel({
   children,
@@ -68,7 +68,7 @@ export function StatusBadge({
       ? "bg-[var(--accent-soft)] text-[var(--accent-text)] ring-[var(--accent-soft)]"
       : tone === "warning"
         ? "bg-[rgba(255,199,133,0.1)] text-[rgba(255,212,166,0.88)] ring-[rgba(255,199,133,0.16)]"
-        : "bg-white/[0.04] text-[var(--foreground-muted)] ring-white/[0.06]";
+        : "bg-[var(--surface-raised-strong)] text-[var(--foreground-muted)] ring-[var(--panel-border)]";
 
   return (
     <span
@@ -98,8 +98,8 @@ export function ActionButton({
     variant === "primary"
       ? "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] shadow-[0_0_20px_var(--glow)]"
       : variant === "ghost"
-        ? "border border-[var(--line)] bg-transparent text-[var(--foreground)] hover:bg-white/[0.04]"
-        : "border border-[var(--line)] bg-white/[0.03] text-[var(--foreground)] hover:bg-white/[0.06]";
+        ? "border border-[var(--line)] bg-transparent text-[var(--foreground)] hover:bg-[var(--surface-hover)]"
+        : "border border-[var(--line)] bg-[var(--surface-input)] text-[var(--foreground)] hover:bg-[var(--surface-hover)]";
 
   const sizeClass =
     size === "sm"
@@ -125,7 +125,7 @@ export function MeterBar({ value, compact }: { value: number; compact?: boolean 
   const width = `${Math.max(0, Math.min(1, value)) * 100}%`;
 
   return (
-    <div className={cx("w-full overflow-hidden rounded-full bg-white/[0.06]", compact ? "h-1.5" : "h-2.5")}>
+    <div className={cx("w-full overflow-hidden rounded-full bg-[var(--surface-raised-strong)]", compact ? "h-1.5" : "h-2.5")}>
       <div
         className="signal-bar h-full rounded-full transition-[width] duration-150"
         style={{ width }}
@@ -148,7 +148,7 @@ export function Toggle({
       aria-checked={checked}
       className={cx(
         "relative h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200",
-        checked ? "bg-[var(--accent)]" : "bg-white/[0.1]",
+        checked ? "bg-[var(--accent)]" : "bg-[var(--surface-raised-strong)]",
         disabled && "opacity-40 pointer-events-none"
       )}
       disabled={disabled}

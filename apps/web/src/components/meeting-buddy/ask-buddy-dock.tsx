@@ -25,7 +25,7 @@ export function AskBuddyDock({
   const showAnswer = isAsking || Boolean(currentAnswer);
 
   return (
-    <div className="border-t border-[var(--panel-border)] bg-white/[0.015] px-5 py-4">
+    <div className="border-t border-[var(--panel-border)] bg-[var(--surface-raised)] px-5 py-4">
       {showAnswer ? (
         <div className="mb-3 rounded-xl border border-[var(--accent)]/20 bg-[var(--accent-soft)] px-4 py-3">
           <div className="mb-1.5 flex items-center gap-2">
@@ -47,8 +47,8 @@ export function AskBuddyDock({
           </label>
           <textarea
             className={cx(
-              "w-full resize-none rounded-xl border border-[var(--line)] bg-white/[0.03] px-3.5 py-2.5 text-sm leading-6 text-[var(--foreground-strong)] outline-none transition",
-              "placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/40 focus:bg-white/[0.04]",
+              "w-full resize-none rounded-xl border border-[var(--line)] bg-[var(--surface-input)] px-3.5 py-2.5 text-sm leading-6 text-[var(--foreground-strong)] outline-none transition",
+              "placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/40 focus:bg-[var(--surface-input-focus)]",
               "disabled:opacity-50"
             )}
             disabled={!canAsk}

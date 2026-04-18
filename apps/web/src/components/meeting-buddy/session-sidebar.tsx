@@ -105,7 +105,7 @@ export function SessionSidebar({
         <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
           <span className="text-sm font-semibold text-[var(--foreground-strong)]">Settings</span>
           <button
-            className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--foreground-muted)] transition hover:bg-white/[0.06] hover:text-[var(--foreground)]"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--foreground-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"
             onClick={onClose}
             type="button"
           >
@@ -125,7 +125,7 @@ export function SessionSidebar({
               {sessionMode === "companion" ? "Companion" : "Capture"}
             </StatusBadge>
           </div>
-          <h2 className="mt-2 text-base font-semibold tracking-tight text-[var(--foreground-strong)]">
+          <h2 className="display mt-2 text-[1.1rem] font-medium leading-tight tracking-[-0.01em] text-[var(--foreground-strong)]">
             {sessionHeadline}
           </h2>
           <p className="mt-1 text-xs leading-5 text-[var(--foreground-muted)]">{statusMessage}</p>

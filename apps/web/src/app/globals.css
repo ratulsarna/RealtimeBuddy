@@ -1,6 +1,47 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
+  /* Light: "warm paper" */
+  --background: #f7f2ea;
+  --foreground: #2a241e;
+  --foreground-strong: #0e0a07;
+  --foreground-muted: #6b635a;
+  --panel-bg: rgba(255, 252, 246, 0.92);
+  --panel-border: rgba(30, 22, 14, 0.08);
+  --line: rgba(30, 22, 14, 0.09);
+  --accent: #d0652c;
+  --accent-hover: #b85623;
+  --accent-soft: rgba(208, 101, 44, 0.12);
+  --accent-text: #a94d1c;
+  --glow: rgba(208, 101, 44, 0.18);
+
+  --surface-raised: rgba(30, 22, 14, 0.03);
+  --surface-raised-strong: rgba(30, 22, 14, 0.06);
+  --surface-hover: rgba(30, 22, 14, 0.05);
+  --surface-input: rgba(30, 22, 14, 0.03);
+  --surface-input-focus: rgba(30, 22, 14, 0.05);
+
+  --scrollbar-thumb: rgba(30, 22, 14, 0.14);
+  --scrollbar-thumb-hover: rgba(30, 22, 14, 0.24);
+
+  --top-bar-bg: rgba(255, 251, 244, 0.88);
+  --drawer-backdrop: rgba(20, 14, 8, 0.45);
+
+  --bg-glow-primary: rgba(208, 101, 44, 0.05);
+  --bg-glow-secondary: rgba(120, 90, 60, 0.04);
+  --buddy-lane-glow-strong: rgba(208, 101, 44, 0.06);
+  --buddy-lane-glow-soft: rgba(208, 101, 44, 0.015);
+  --live-dot-glow-strong: rgba(208, 101, 44, 0.4);
+  --live-dot-glow-soft: rgba(208, 101, 44, 0.35);
+  --live-dot-glow-fade: rgba(208, 101, 44, 0.2);
+  --live-dot-glow-fade-mid: rgba(208, 101, 44, 0.25);
+  --selection-bg: rgba(208, 101, 44, 0.25);
+}
+
+:root.dark {
+  /* Dark: original warm earthtone */
   --background: #090b0a;
   --foreground: #d4cdc4;
   --foreground-strong: #f5efe8;
@@ -13,13 +54,36 @@
   --accent-soft: rgba(232, 128, 78, 0.12);
   --accent-text: #ffb088;
   --glow: rgba(232, 128, 78, 0.15);
+
+  --surface-raised: rgba(255, 255, 255, 0.03);
+  --surface-raised-strong: rgba(255, 255, 255, 0.06);
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --surface-input: rgba(255, 255, 255, 0.03);
+  --surface-input-focus: rgba(255, 255, 255, 0.04);
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.08);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.14);
+
+  --top-bar-bg: rgba(12, 14, 16, 0.92);
+  --drawer-backdrop: rgba(0, 0, 0, 0.55);
+
+  --bg-glow-primary: rgba(232, 128, 78, 0.06);
+  --bg-glow-secondary: rgba(80, 120, 100, 0.04);
+  --buddy-lane-glow-strong: rgba(232, 128, 78, 0.08);
+  --buddy-lane-glow-soft: rgba(232, 128, 78, 0.02);
+  --live-dot-glow-strong: rgba(232, 128, 78, 0.4);
+  --live-dot-glow-soft: rgba(232, 128, 78, 0.35);
+  --live-dot-glow-fade: rgba(232, 128, 78, 0.2);
+  --live-dot-glow-fade-mid: rgba(232, 128, 78, 0.25);
+  --selection-bg: rgba(232, 128, 78, 0.25);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-space-grotesk);
-  --font-mono: var(--font-plex-mono);
+  --font-display: var(--font-fraunces);
+  --font-sans: var(--font-geist);
+  --font-mono: var(--font-jetbrains-mono);
 }
 
 * {
@@ -28,8 +92,8 @@
 
 html {
   background:
-    radial-gradient(ellipse at 0% 0%, rgba(232, 128, 78, 0.06), transparent 50%),
-    radial-gradient(ellipse at 100% 0%, rgba(80, 120, 100, 0.04), transparent 40%),
+    radial-gradient(ellipse at 0% 0%, var(--bg-glow-primary), transparent 50%),
+    radial-gradient(ellipse at 100% 0%, var(--bg-glow-secondary), transparent 40%),
     var(--background);
 }
 
@@ -38,7 +102,7 @@ body {
   overflow: hidden;
   background: transparent;
   color: var(--foreground);
-  font-family: var(--font-space-grotesk), sans-serif;
+  font-family: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
 }
 
 a {
@@ -53,7 +117,7 @@ select {
 }
 
 ::selection {
-  background: rgba(232, 128, 78, 0.25);
+  background: var(--selection-bg);
 }
 
 /* ── Scrollbar ── */
@@ -67,26 +131,33 @@ select {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--scrollbar-thumb);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* ── Surfaces ── */
 
 .top-bar {
-  background: rgba(12, 14, 16, 0.92);
+  background: var(--top-bar-bg);
   backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--panel-border);
 }
 
 /* ── Typography ── */
 
+.display {
+  font-family: var(--font-fraunces), ui-serif, Georgia, serif;
+  font-optical-sizing: auto;
+  font-variation-settings: "SOFT" 50, "WONK" 0, "opsz" 72;
+  letter-spacing: -0.01em;
+}
+
 .mono {
-  font-family: var(--font-plex-mono), monospace;
+  font-family: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
 /* ── Live Indicator ── */
@@ -97,22 +168,22 @@ select {
   border-radius: 50%;
   background: var(--accent);
   box-shadow:
-    0 0 0 0 rgba(232, 128, 78, 0.4),
-    0 0 10px rgba(232, 128, 78, 0.35);
+    0 0 0 0 var(--live-dot-glow-strong),
+    0 0 10px var(--live-dot-glow-soft);
   animation: livePulse 2s ease-out infinite;
 }
 
 /* ── Signal Meter ── */
 
 .signal-bar {
-  background: linear-gradient(90deg, var(--accent), #f5c89a);
-  box-shadow: 0 0 8px rgba(232, 128, 78, 0.2);
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+  box-shadow: 0 0 8px var(--live-dot-glow-fade);
 }
 
 /* ── Drawer ── */
 
 .drawer-backdrop {
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--drawer-backdrop);
   backdrop-filter: blur(4px);
 }
 
@@ -128,25 +199,25 @@ select {
 
 .buddy-lane-backdrop {
   background:
-    radial-gradient(ellipse at 50% -20%, rgba(232, 128, 78, 0.08), transparent 55%),
-    linear-gradient(180deg, rgba(232, 128, 78, 0.02), transparent 40%);
+    radial-gradient(ellipse at 50% -20%, var(--buddy-lane-glow-strong), transparent 55%),
+    linear-gradient(180deg, var(--buddy-lane-glow-soft), transparent 40%);
 }
 
 @keyframes livePulse {
   0% {
     box-shadow:
-      0 0 0 0 rgba(232, 128, 78, 0.4),
-      0 0 10px rgba(232, 128, 78, 0.35);
+      0 0 0 0 var(--live-dot-glow-strong),
+      0 0 10px var(--live-dot-glow-soft);
   }
   70% {
     box-shadow:
-      0 0 0 8px rgba(232, 128, 78, 0),
-      0 0 14px rgba(232, 128, 78, 0.25);
+      0 0 0 8px transparent,
+      0 0 14px var(--live-dot-glow-fade-mid);
   }
   100% {
     box-shadow:
-      0 0 0 0 rgba(232, 128, 78, 0),
-      0 0 10px rgba(232, 128, 78, 0.2);
+      0 0 0 0 transparent,
+      0 0 10px var(--live-dot-glow-fade);
   }
 }
 
@@ -172,13 +243,13 @@ select {
 
 @keyframes buddyPulseRing {
   0% {
-    box-shadow: 0 0 0 0 rgba(232, 128, 78, 0.45);
+    box-shadow: 0 0 0 0 var(--live-dot-glow-strong);
   }
   70% {
-    box-shadow: 0 0 0 10px rgba(232, 128, 78, 0);
+    box-shadow: 0 0 0 10px transparent;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(232, 128, 78, 0);
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 
