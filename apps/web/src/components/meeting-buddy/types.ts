@@ -36,14 +36,3 @@ export type ConnectionState =
   | "paused"
   | "resuming"
   | "stopping";
-
-export type SessionMetric = {
-  label: string;
-  value: string;
-};
-
-export type SessionDetail = {
-  label: string;
-  value: string;
-  mono?: boolean;
-};

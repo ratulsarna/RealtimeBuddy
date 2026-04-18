@@ -5,8 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import { BuddyLane } from "@/components/meeting-buddy/buddy-lane";
 import {
   formatConnectionStateLabel,
-  formatSessionModeLabel,
-  getSessionHeadline,
   getStatusTone,
 } from "@/components/meeting-buddy/format";
 import { MeetingBriefCard } from "@/components/meeting-buddy/meeting-brief-card";
@@ -19,8 +17,6 @@ import type {
   CommittedTranscriptEntry,
   ConnectionState,
   PendingTranscriptEntry,
-  SessionDetail,
-  SessionMetric,
   SessionMode,
 } from "@/components/meeting-buddy/types";
 import { WorkspaceHeader } from "@/components/meeting-buddy/workspace-header";
@@ -32,7 +28,6 @@ import {
 } from "@/lib/audio-capture";
 import { resolveBrowserBackendConfig } from "@/lib/backend-config";
 import {
-  getSessionLanguageLabel,
   type SessionLanguagePreference,
 } from "@realtimebuddy/shared/language-preferences";
 import { type BuddyEvent, type ServerEvent } from "@realtimebuddy/shared/protocol";
@@ -57,6 +52,7 @@ export function MeetingBuddyApp({
   backendBaseUrl = "",
   initialStaticUserSeed = "",
 }: MeetingBuddyAppProps) {
+  const [secondaryPanelTab, setSecondaryPanelTab] = useState<"transcript" | "note">("transcript");
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [sessionMode, setSessionMode] = useState<SessionMode>(null);
   const [sessionId, setSessionId] = useState("");
@@ -69,7 +65,7 @@ export function MeetingBuddyApp({
   const [question, setQuestion] = useState("");
   const [microphones, setMicrophones] = useState<AudioInputDevice[]>([]);
   const [selectedMicId, setSelectedMicId] = useState("");
-  const [audioLevel, setAudioLevel] = useState(0);
+  const [, setAudioLevel] = useState(0);
   const [partialTranscript, setPartialTranscript] = useState("");
   const [provisionalEntries, setProvisionalEntries] = useState<PendingTranscriptEntry[]>([]);
   const [transcriptEntries, setTranscriptEntries] = useState<CommittedTranscriptEntry[]>([]);
@@ -77,12 +73,12 @@ export function MeetingBuddyApp({
   const [notePathRelative, setNotePathRelative] = useState("");
   const [logPathRelative, setLogPathRelative] = useState("");
   const [statusMessage, setStatusMessage] = useState("Ready when you are.");
-  const [modelName, setModelName] = useState("");
+  const [, setModelName] = useState("");
   const [currentAnswer, setCurrentAnswer] = useState("");
   const [buddyEvents, setBuddyEvents] = useState<BuddyEvent[]>([]);
-  const [audioDiagnostics, setAudioDiagnostics] = useState<AudioDiagnostics | null>(null);
-  const [captureClientCount, setCaptureClientCount] = useState(0);
-  const [companionClientCount, setCompanionClientCount] = useState(0);
+  const [, setAudioDiagnostics] = useState<AudioDiagnostics | null>(null);
+  const [, setCaptureClientCount] = useState(0);
+  const [, setCompanionClientCount] = useState(0);
   const [isAsking, setIsAsking] = useState(false);
   const [isSavingStandingContext, setIsSavingStandingContext] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -176,11 +172,7 @@ export function MeetingBuddyApp({
   const selectedMicLabel =
     microphones.find((device) => device.deviceId === selectedMicId)?.label ||
     "Browser default microphone";
-  const backendTargetLabel = backendBaseUrl.replace(/\/$/, "") || "current host:3001";
-  const languageLabel = getSessionLanguageLabel(languagePreference);
   const connectionStateLabel = formatConnectionStateLabel(connectionState);
-  const sessionModeLabel = formatSessionModeLabel(sessionMode);
-  const sessionHeadline = getSessionHeadline(connectionState, sessionMode);
   const statusTone = getStatusTone(connectionState);
 
   const syncSessionQuery = (nextSessionId: string) => {
@@ -910,58 +902,7 @@ export function MeetingBuddyApp({
 
   const showBrief = connectionState === "idle" && !hasPreservedMeetingState;
 
-  const sessionMetrics: SessionMetric[] = [
-    { label: "State", value: connectionStateLabel },
-    { label: "Mode", value: sessionModeLabel },
-    { label: "Language", value: languageLabel },
-    {
-      label: "Clients",
-      value: `${captureClientCount} / ${companionClientCount}`,
-    },
-  ];
-
-  const sessionDetails: SessionDetail[] = [
-    sessionId
-      ? {
-          label: "Session ID",
-          value: sessionId,
-          mono: true,
-        }
-      : null,
-    modelName
-      ? {
-          label: "Answer Model",
-          value: modelName,
-        }
-      : null,
-    {
-      label: "Backend",
-      value: backendTargetLabel,
-      mono: true,
-    },
-    {
-      label: "Capture Mix",
-      value: includeTabAudio ? "Microphone + tab audio" : "Microphone only",
-    },
-    notePathRelative
-      ? {
-          label: "Note Path",
-          value: notePathRelative,
-          mono: true,
-        }
-      : null,
-    logPathRelative
-      ? {
-          label: "Log Path",
-          value: logPathRelative,
-          mono: true,
-        }
-      : null,
-  ].filter((detail): detail is SessionDetail => Boolean(detail));
-
   const sidebarProps = {
-    audioDiagnostics,
-    audioLevel,
     canJoin,
     canPause,
     canResume,
@@ -987,24 +928,16 @@ export function MeetingBuddyApp({
     onStopSession: stopSession,
     onTitleChange: setTitle,
     selectedMicId,
-    selectedMicLabel,
-    sessionDetails,
-    sessionHeadline,
     sessionId,
     sessionIdInput,
-    sessionMetrics,
     sessionMode,
     staticUserSeed,
-    statusMessage,
-    statusTone,
     title,
   } as const;
 
   return (
     <main className="flex h-screen flex-col overflow-hidden">
-      {/* ── Top Bar ── */}
       <WorkspaceHeader
-        audioLevel={audioLevel}
         canPause={canPause}
         canResume={canResume}
         canReset={canReset}
@@ -1017,71 +950,106 @@ export function MeetingBuddyApp({
         onStartSession={startSession}
         onStopSession={stopSession}
         onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
-        onTitleChange={setTitle}
         sessionMode={sessionMode}
         showStartAction={!showBrief}
-        showTitleInput={!showBrief}
+        showSessionTitle={!showBrief}
         statusTone={statusTone}
         title={title}
       />
 
-      {/* ── Body ── */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Desktop sidebar — persistent left column */}
-        <div className="hidden w-72 flex-shrink-0 overflow-y-auto border-r border-[var(--panel-border)] bg-[var(--panel-bg)] xl:block">
-          <SessionSidebar {...sidebarProps} />
-        </div>
-
-        {/* Main stage — pre-meeting brief OR Buddy lane */}
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {showBrief ? (
-            <div className="flex-1 overflow-y-auto">
-              <MeetingBriefCard
-                canStart={canStart}
+      <div className="flex-1 overflow-hidden">
+        {showBrief ? (
+          <div className="h-full overflow-y-auto">
+            <MeetingBriefCard
+              canStart={canStart}
+              meetingSeed={meetingSeed}
+              onMeetingSeedChange={setMeetingSeed}
+              onStartSession={startSession}
+            />
+          </div>
+        ) : (
+          <div className="mx-auto flex h-full w-full max-w-[1480px] min-w-0 flex-col gap-4 overflow-hidden px-4 pb-4 pt-6 sm:px-6 lg:flex-row lg:gap-6 lg:px-8 lg:pb-6">
+            <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+              <BuddyLane
+                askHint={askHint}
+                canAsk={canAsk}
+                connectionState={connectionState}
+                currentAnswer={currentAnswer}
+                events={buddyEvents}
+                hasPreservedMeetingState={hasPreservedMeetingState}
+                isAsking={isAsking}
                 meetingSeed={meetingSeed}
-                onMeetingSeedChange={setMeetingSeed}
-                onStartSession={startSession}
+                onQuestionChange={setQuestion}
+                onSendQuestion={sendQuestion}
+                question={question}
+                staticUserSeed={staticUserSeed}
               />
             </div>
-          ) : (
-            <BuddyLane
-              askHint={askHint}
-              canAsk={canAsk}
-              connectionState={connectionState}
-              currentAnswer={currentAnswer}
-              events={buddyEvents}
-              hasPreservedMeetingState={hasPreservedMeetingState}
-              isAsking={isAsking}
-              meetingSeed={meetingSeed}
-              onQuestionChange={setQuestion}
-              onSendQuestion={sendQuestion}
-              question={question}
-              staticUserSeed={staticUserSeed}
-            />
-          )}
-        </div>
 
-        {/* Supporting column — transcript (hero) + notes (compact) */}
-        <div className="hidden w-80 flex-shrink-0 flex-col border-l border-[var(--panel-border)] md:flex xl:w-96">
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <TranscriptPanel
-              partialTranscript={partialTranscript}
-              provisionalEntries={provisionalEntries}
-              transcriptEntries={transcriptEntries}
-            />
+            <section className="shell-rail flex h-[18rem] flex-shrink-0 flex-col overflow-hidden rounded-[1.5rem] border border-[var(--panel-border)] lg:hidden">
+              <div className="flex items-center gap-2 border-b border-[var(--panel-border)]/80 px-4 py-3">
+                <button
+                  aria-pressed={secondaryPanelTab === "transcript"}
+                  className={[
+                    "inline-flex h-9 items-center rounded-full px-3 text-sm font-medium transition",
+                    secondaryPanelTab === "transcript"
+                      ? "bg-[var(--surface-raised-strong)] text-[var(--foreground-strong)]"
+                      : "text-[var(--foreground-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]",
+                  ].join(" ")}
+                  onClick={() => setSecondaryPanelTab("transcript")}
+                  type="button"
+                >
+                  Transcript
+                </button>
+                <button
+                  aria-pressed={secondaryPanelTab === "note"}
+                  className={[
+                    "inline-flex h-9 items-center rounded-full px-3 text-sm font-medium transition",
+                    secondaryPanelTab === "note"
+                      ? "bg-[var(--surface-raised-strong)] text-[var(--foreground-strong)]"
+                      : "text-[var(--foreground-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]",
+                  ].join(" ")}
+                  onClick={() => setSecondaryPanelTab("note")}
+                  type="button"
+                >
+                  Note
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {secondaryPanelTab === "transcript" ? (
+                  <TranscriptPanel
+                    partialTranscript={partialTranscript}
+                    provisionalEntries={provisionalEntries}
+                    transcriptEntries={transcriptEntries}
+                  />
+                ) : (
+                  <NotePanel noteMarkdown={noteMarkdown} notePathRelative={notePathRelative} />
+                )}
+              </div>
+            </section>
+
+            <aside className="shell-rail hidden w-[24rem] flex-shrink-0 flex-col overflow-hidden rounded-[2rem] border border-[var(--panel-border)] lg:flex">
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <TranscriptPanel
+                  partialTranscript={partialTranscript}
+                  provisionalEntries={provisionalEntries}
+                  transcriptEntries={transcriptEntries}
+                />
+              </div>
+              <div className="max-h-72 flex-shrink-0 overflow-y-auto border-t border-[var(--panel-border)]/80">
+                <NotePanel noteMarkdown={noteMarkdown} notePathRelative={notePathRelative} />
+              </div>
+            </aside>
           </div>
-          <div className="max-h-64 flex-shrink-0 overflow-y-auto border-t border-[var(--panel-border)] bg-[var(--surface-raised)]">
-            <NotePanel noteMarkdown={noteMarkdown} notePathRelative={notePathRelative} />
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* ── Mobile/Tablet drawer sidebar ── */}
       {sidebarOpen ? (
-        <div className="fixed inset-0 z-50 xl:hidden" onClick={() => setSidebarOpen(false)}>
+        <div className="fixed inset-0 z-50" onClick={() => setSidebarOpen(false)}>
           <div className="drawer-backdrop absolute inset-0" />
           <aside
-            className="slide-in-right absolute bottom-0 right-0 top-0 w-80 overflow-y-auto border-l border-[var(--panel-border)] bg-[var(--background)]"
+            className="slide-in-right absolute bottom-0 right-0 top-0 w-full max-w-[26rem] overflow-y-auto border-l border-[var(--panel-border)] bg-[var(--drawer-panel-bg)]"
             onClick={(e) => e.stopPropagation()}
           >
             <SessionSidebar {...sidebarProps} onClose={() => setSidebarOpen(false)} />

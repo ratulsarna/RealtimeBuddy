@@ -9,10 +9,10 @@ export function cx(...classes: Array<string | false | null | undefined>) {
 }
 
 export const inputClass =
-  "h-9 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-input)] px-3 text-sm text-[var(--foreground-strong)] outline-none transition placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/40 focus:bg-[var(--surface-input-focus)] disabled:opacity-50";
+  "h-11 w-full rounded-2xl border border-[var(--line)]/70 bg-[var(--surface-input)] px-4 text-sm text-[var(--foreground-strong)] outline-none transition placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/30 focus:bg-[var(--surface-input-focus)] disabled:opacity-50";
 
 export const textareaClass =
-  "w-full resize-none rounded-lg border border-[var(--line)] bg-[var(--surface-input)] px-3 py-2 text-sm leading-5 text-[var(--foreground-strong)] outline-none transition placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/40 focus:bg-[var(--surface-input-focus)] disabled:opacity-50";
+  "w-full resize-none rounded-3xl border border-[var(--line)]/70 bg-[var(--surface-input)] px-4 py-3 text-sm leading-6 text-[var(--foreground-strong)] outline-none transition placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/30 focus:bg-[var(--surface-input-focus)] disabled:opacity-50";
 
 export function SectionLabel({
   children,
@@ -24,7 +24,7 @@ export function SectionLabel({
   return (
     <p
       className={cx(
-        "mono text-[0.62rem] uppercase tracking-[0.24em] text-[var(--foreground-muted)]",
+        "text-[0.68rem] font-medium uppercase tracking-[0.18em] text-[var(--foreground-muted)]",
         className
       )}
     >
@@ -43,7 +43,7 @@ export function FieldLabel({
   return (
     <span
       className={cx(
-        "mono text-[0.58rem] uppercase tracking-[0.22em] text-[var(--foreground-muted)]",
+        "text-[0.68rem] font-medium uppercase tracking-[0.18em] text-[var(--foreground-muted)]",
         className
       )}
     >
@@ -96,15 +96,15 @@ export function ActionButton({
 }) {
   const variantClass =
     variant === "primary"
-      ? "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] shadow-[0_0_20px_var(--glow)]"
+      ? "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] shadow-[0_10px_30px_var(--glow)]"
       : variant === "ghost"
-        ? "border border-[var(--line)] bg-transparent text-[var(--foreground)] hover:bg-[var(--surface-hover)]"
-        : "border border-[var(--line)] bg-[var(--surface-input)] text-[var(--foreground)] hover:bg-[var(--surface-hover)]";
+        ? "border border-[var(--line)]/70 bg-transparent text-[var(--foreground)] hover:bg-[var(--surface-hover)]"
+        : "border border-[var(--line)]/70 bg-[var(--surface-input)] text-[var(--foreground)] hover:bg-[var(--surface-hover)]";
 
   const sizeClass =
     size === "sm"
-      ? "h-8 px-3 text-xs rounded-lg"
-      : "h-10 px-4 text-sm rounded-xl";
+      ? "h-9 px-3.5 text-xs rounded-xl"
+      : "h-11 px-5 text-sm rounded-2xl";
 
   return (
     <button

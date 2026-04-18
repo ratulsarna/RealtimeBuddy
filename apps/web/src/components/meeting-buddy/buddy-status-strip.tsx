@@ -73,7 +73,7 @@ export function BuddyStatusStrip({
       : "text-[var(--foreground)]";
 
   return (
-    <div className="relative flex items-center justify-between gap-3 rounded-xl border border-[var(--panel-border)] bg-[var(--surface-raised)] px-4 py-2.5">
+    <div className="relative flex flex-wrap items-center justify-between gap-3 rounded-[1.5rem] border border-[var(--panel-border)]/80 bg-[var(--panel-bg)]/70 px-4 py-3 backdrop-blur-xl">
       <div className="flex min-w-0 items-center gap-3">
         <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
           <span className={cx("h-2 w-2 rounded-full", dotClass)} />
@@ -86,7 +86,7 @@ export function BuddyStatusStrip({
 
       <div className="flex flex-shrink-0 items-center gap-2">
         {eventCount > 0 ? (
-          <span className="mono inline-flex h-6 items-center rounded-full bg-[var(--surface-raised-strong)] px-2 text-[0.6rem] uppercase tracking-[0.18em] text-[var(--foreground)]">
+          <span className="inline-flex h-7 items-center rounded-full bg-[var(--surface-raised)] px-3 text-[0.72rem] font-medium text-[var(--foreground)]">
             {eventCount} card{eventCount === 1 ? "" : "s"}
           </span>
         ) : null}
@@ -94,7 +94,7 @@ export function BuddyStatusStrip({
         {hasBrief ? (
           <button
             className={cx(
-              "inline-flex h-6 items-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surface-input)] px-2.5 text-[0.6rem] uppercase tracking-[0.18em] text-[var(--foreground)] transition hover:bg-[var(--surface-hover)]",
+              "inline-flex h-7 items-center gap-1.5 rounded-full border border-[var(--line)]/70 bg-[var(--surface-input)] px-3 text-[0.72rem] font-medium text-[var(--foreground)] transition hover:bg-[var(--surface-hover)]",
               briefOpen && "bg-[var(--surface-raised-strong)]"
             )}
             onClick={() => setBriefOpen((prev) => !prev)}
@@ -119,11 +119,11 @@ export function BuddyStatusStrip({
       {briefOpen && hasBrief ? (
         <div
           ref={popoverRef}
-          className="slide-in-right absolute right-2 top-[calc(100%+0.35rem)] z-20 w-80 rounded-xl border border-[var(--panel-border)] bg-[var(--panel-bg)] p-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)]"
+          className="slide-in-right absolute right-2 top-[calc(100%+0.45rem)] z-20 w-80 rounded-[1.5rem] border border-[var(--panel-border)] bg-[var(--panel-bg)] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
         >
           {meetingSeed.trim() ? (
             <div className="mb-2 last:mb-0">
-              <p className="mono text-[0.52rem] uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
+              <p className="text-[0.68rem] font-medium uppercase tracking-[0.18em] text-[var(--foreground-muted)]">
                 This meeting
               </p>
               <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-[var(--foreground)]">
@@ -133,7 +133,7 @@ export function BuddyStatusStrip({
           ) : null}
           {staticUserSeed.trim() ? (
             <div>
-              <p className="mono text-[0.52rem] uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
+              <p className="text-[0.68rem] font-medium uppercase tracking-[0.18em] text-[var(--foreground-muted)]">
                 Standing context
               </p>
               <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-[var(--foreground)]">

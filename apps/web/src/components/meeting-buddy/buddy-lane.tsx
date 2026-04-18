@@ -190,84 +190,83 @@ export function BuddyLane({
   const showEmpty = events.length === 0;
 
   return (
-    <section className="buddy-lane-backdrop flex h-full min-h-0 flex-col">
-      {/* Status strip */}
-      <div className="flex-shrink-0 px-5 pt-5">
-        <BuddyStatusStrip
-          eventCount={events.length}
-          meetingSeed={meetingSeed}
-          staticUserSeed={staticUserSeed}
-          state={state}
-        />
-      </div>
+    <section className="buddy-lane-backdrop flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="mx-auto flex h-full w-full max-w-[54rem] min-h-0 flex-col px-1 sm:px-3">
+        <div className="flex-shrink-0 pb-4 pt-2">
+          <BuddyStatusStrip
+            eventCount={events.length}
+            meetingSeed={meetingSeed}
+            staticUserSeed={staticUserSeed}
+            state={state}
+          />
+        </div>
 
-      {/* Card stack / wrap-up groups */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        {isWrapup ? (
-          <div className="space-y-6">
-            <div>
-              <p className="text-sm font-semibold text-[var(--foreground-strong)]">
-                Meeting recap
-              </p>
-              <p className="mt-0.5 text-xs text-[var(--foreground-muted)]">
-                {events.length} card{events.length === 1 ? "" : "s"} from this session.
-              </p>
-            </div>
-            {wrapGroups.length > 0 ? (
-              wrapGroups.map((group) => (
-                <div key={group.key}>
-                  <SectionLabel>{group.label}</SectionLabel>
-                  <ul className="mt-2 space-y-2.5">
-                    {group.events.map((event) => (
-                      <li key={event.id}>
-                        <BuddyCard
-                          animate={false}
-                          event={event}
-                          nowMs={nowMs}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))
-            ) : (
-              <div className="rounded-2xl border border-[var(--panel-border)] bg-[var(--surface-raised)] px-4 py-5">
-                <p className="text-sm font-medium text-[var(--foreground-strong)]">
-                  Meeting ended.
+        <div className="min-h-0 flex-1 overflow-y-auto pb-6">
+          {isWrapup ? (
+            <div className="space-y-8">
+              <div>
+                <p className="display text-[1.5rem] font-medium tracking-[-0.02em] text-[var(--foreground-strong)]">
+                  Meeting recap
                 </p>
-                <p className="mt-1 text-sm text-[var(--foreground-muted)]">
-                  Buddy did not surface any cards this time, but the transcript and note stay available while you wrap up.
+                <p className="mt-2 text-sm leading-6 text-[var(--foreground-muted)]">
+                  {events.length} card{events.length === 1 ? "" : "s"} from this session.
                 </p>
               </div>
-            )}
-          </div>
-        ) : showEmpty ? (
-          <EmptyState state={state} />
-        ) : (
-          <ul className="space-y-2.5">
-            {events.map((event) => (
-              <li key={event.id}>
-                <BuddyCard
-                  event={event}
-                  nowMs={nowMs}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+              {wrapGroups.length > 0 ? (
+                wrapGroups.map((group) => (
+                  <div key={group.key}>
+                    <SectionLabel>{group.label}</SectionLabel>
+                    <ul className="mt-3 space-y-4">
+                      {group.events.map((event) => (
+                        <li key={event.id}>
+                          <BuddyCard
+                            animate={false}
+                            event={event}
+                            nowMs={nowMs}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-[1.75rem] border border-[var(--panel-border)] bg-[var(--panel-bg)]/75 px-5 py-6">
+                  <p className="text-sm font-medium text-[var(--foreground-strong)]">
+                    Meeting ended.
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-[var(--foreground-muted)]">
+                    Buddy did not surface any cards this time, but the transcript and note stay available while you wrap up.
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : showEmpty ? (
+            <EmptyState state={state} />
+          ) : (
+            <ul className="space-y-4">
+              {events.map((event) => (
+                <li key={event.id}>
+                  <BuddyCard
+                    event={event}
+                    nowMs={nowMs}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
-      {/* Ask Buddy dock */}
-      <div className="flex-shrink-0">
-        <AskBuddyDock
-          askHint={askHint}
-          canAsk={canAsk}
-          currentAnswer={currentAnswer}
-          isAsking={isAsking}
-          onQuestionChange={onQuestionChange}
-          onSendQuestion={onSendQuestion}
-          question={question}
-        />
+        <div className="flex-shrink-0 py-2">
+          <AskBuddyDock
+            askHint={askHint}
+            canAsk={canAsk}
+            currentAnswer={currentAnswer}
+            isAsking={isAsking}
+            onQuestionChange={onQuestionChange}
+            onSendQuestion={onSendQuestion}
+            question={question}
+          />
+        </div>
       </div>
     </section>
   );

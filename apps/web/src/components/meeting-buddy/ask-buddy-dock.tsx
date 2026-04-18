@@ -25,9 +25,9 @@ export function AskBuddyDock({
   const showAnswer = isAsking || Boolean(currentAnswer);
 
   return (
-    <div className="border-t border-[var(--panel-border)] bg-[var(--surface-raised)] px-5 py-4">
+    <div className="rounded-[1.75rem] border border-[var(--panel-border)] bg-[var(--panel-bg)]/80 px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.08)] backdrop-blur-xl">
       {showAnswer ? (
-        <div className="mb-3 rounded-xl border border-[var(--accent)]/20 bg-[var(--accent-soft)] px-4 py-3">
+        <div className="mb-4 rounded-[1.25rem] border border-[var(--accent)]/20 bg-[var(--accent-soft)] px-4 py-3">
           <div className="mb-1.5 flex items-center gap-2">
             <span className="live-dot" />
             <SectionLabel className="text-[var(--accent-text)]">
@@ -40,7 +40,7 @@ export function AskBuddyDock({
         </div>
       ) : null}
 
-      <div className="flex items-end gap-2">
+      <div className="flex items-end gap-3">
         <div className="min-w-0 flex-1">
           <label className="sr-only" htmlFor="ask-buddy-input">
             Ask Buddy a question
@@ -48,6 +48,7 @@ export function AskBuddyDock({
           <textarea
             className={cx(
               "w-full resize-none rounded-xl border border-[var(--line)] bg-[var(--surface-input)] px-3.5 py-2.5 text-sm leading-6 text-[var(--foreground-strong)] outline-none transition",
+              "rounded-[1.4rem] border-[var(--line)]/70 bg-[var(--surface-input)] px-4 py-3",
               "placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/40 focus:bg-[var(--surface-input-focus)]",
               "disabled:opacity-50"
             )}
@@ -70,7 +71,7 @@ export function AskBuddyDock({
           <p className="mt-1.5 text-[0.72rem] text-[var(--foreground-muted)]">{askHint}</p>
         </div>
         <ActionButton
-          className="h-10 flex-shrink-0"
+          className="h-11 flex-shrink-0"
           disabled={!canSubmit}
           onClick={() => onSendQuestion()}
           size="md"

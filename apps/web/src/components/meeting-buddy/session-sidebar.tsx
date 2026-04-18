@@ -1,22 +1,17 @@
+import type { ReactNode } from "react";
+
 import type { AudioInputDevice } from "@/lib/audio-capture";
 import {
-  getSessionLanguageLabel,
   sessionLanguageOptions,
   type SessionLanguagePreference,
 } from "@realtimebuddy/shared/language-preferences";
 
-import type {
-  AudioDiagnostics,
-  SessionDetail,
-  SessionMetric,
-  SessionMode,
-} from "@/components/meeting-buddy/types";
+import type { SessionMode } from "@/components/meeting-buddy/types";
+import { ThemeToggle } from "@/components/meeting-buddy/theme-toggle";
 import {
   ActionButton,
   FieldLabel,
-  MeterBar,
   SectionLabel,
-  StatusBadge,
   Toggle,
   cx,
   inputClass,
@@ -24,8 +19,6 @@ import {
 } from "@/components/meeting-buddy/ui";
 
 type SessionSidebarProps = {
-  audioDiagnostics: AudioDiagnostics | null;
-  audioLevel: number;
   canJoin: boolean;
   canPause: boolean;
   canReset: boolean;
@@ -52,22 +45,29 @@ type SessionSidebarProps = {
   onStopSession: () => void;
   onTitleChange: (value: string) => void;
   selectedMicId: string;
-  selectedMicLabel: string;
-  sessionDetails: SessionDetail[];
-  sessionHeadline: string;
   sessionId: string;
   sessionIdInput: string;
-  sessionMetrics: SessionMetric[];
   sessionMode: SessionMode;
   staticUserSeed: string;
-  statusMessage: string;
-  statusTone: "active" | "warning" | "neutral";
   title: string;
 };
 
+function SettingsSection({
+  children,
+  title,
+}: {
+  children: ReactNode;
+  title: string;
+}) {
+  return (
+    <section className="space-y-4 border-t border-[var(--line)]/70 pt-5 first:border-t-0 first:pt-0">
+      <SectionLabel>{title}</SectionLabel>
+      {children}
+    </section>
+  );
+}
+
 export function SessionSidebar({
-  audioDiagnostics,
-  audioLevel,
   canJoin,
   canPause,
   canReset,
@@ -94,75 +94,50 @@ export function SessionSidebar({
   onStopSession,
   onTitleChange,
   selectedMicId,
-  selectedMicLabel,
-  sessionDetails,
-  sessionHeadline,
   sessionId,
   sessionIdInput,
-  sessionMetrics,
   sessionMode,
   staticUserSeed,
-  statusMessage,
-  statusTone,
   title,
 }: SessionSidebarProps) {
+  const showSessionActions = canPause || canResume || canStop || canReset;
+  const showCompanionSection = canStart || Boolean(sessionId) || Boolean(sessionIdInput.trim());
+
   return (
-    <div className="flex flex-col">
-      {/* Drawer header — only rendered when used as a mobile drawer */}
-      {onClose ? (
-        <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
-          <span className="text-sm font-semibold text-[var(--foreground-strong)]">Settings</span>
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between border-b border-[var(--line)]/70 px-6 py-4">
+        <div>
+          <p className="text-[0.68rem] font-medium uppercase tracking-[0.18em] text-[var(--foreground-muted)]">
+            Settings
+          </p>
+          <p className="mt-1 text-sm text-[var(--foreground)]">
+            Keep the session setup close at hand.
+          </p>
+        </div>
+        {onClose ? (
           <button
-            className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--foreground-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"
+            className="flex h-9 w-9 items-center justify-center rounded-2xl border border-[var(--line)]/70 text-[var(--foreground-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"
             onClick={onClose}
             type="button"
           >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" viewBox="0 0 24 24">
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeWidth="1.8"
+              viewBox="0 0 24 24"
+            >
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
-      <div className="p-4">
-        {/* ── Status ── */}
-        <div className="pb-4">
-          <div className="flex items-center justify-between gap-2">
-            <SectionLabel>Session</SectionLabel>
-            {sessionMode === "companion" ? (
-              <StatusBadge live={statusTone === "active"} tone={statusTone}>
-                Companion
-              </StatusBadge>
-            ) : null}
-          </div>
-          <h2 className="display mt-2 text-[1.1rem] font-medium leading-tight tracking-[-0.01em] text-[var(--foreground-strong)]">
-            {sessionHeadline}
-          </h2>
-          {statusMessage !== "Ready when you are." ? (
-            <p className="mt-1 text-xs leading-5 text-[var(--foreground-muted)]">{statusMessage}</p>
-          ) : null}
-        </div>
-
-        {/* ── Metrics ── */}
-        <dl className="grid grid-cols-2 gap-x-3 gap-y-2.5 border-y border-[var(--line)] py-3">
-          {sessionMetrics.map((metric) => (
-            <div key={metric.label} className="min-w-0">
-              <dt className="mono text-[0.52rem] uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
-                {metric.label}
-              </dt>
-              <dd className="mt-0.5 truncate text-xs font-medium text-[var(--foreground)]">
-                {metric.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-
-        {/* ── Configure ── */}
-        <div className="space-y-3 border-b border-[var(--line)] py-4">
-          <SectionLabel>Configure</SectionLabel>
-
-          <label className="flex flex-col gap-1">
-            <FieldLabel>Session Title</FieldLabel>
+      <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+        <SettingsSection title="Session">
+          <label className="flex flex-col gap-2">
+            <FieldLabel>Session title</FieldLabel>
             <input
               className={inputClass}
               onChange={(event) => onTitleChange(event.target.value)}
@@ -171,23 +146,26 @@ export function SessionSidebar({
             />
           </label>
 
-          <label className="flex flex-col gap-1">
-            <FieldLabel>Language</FieldLabel>
-            <select
-              className={inputClass}
-              disabled={!canStart}
-              onChange={(event) => onLanguageChange(event.target.value as SessionLanguagePreference)}
-              value={languagePreference}
-            >
-              {sessionLanguageOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {showSessionActions ? (
+            <div className="grid grid-cols-2 gap-2">
+              <ActionButton disabled={!canPause} onClick={onPauseSession} size="sm">
+                Pause
+              </ActionButton>
+              <ActionButton disabled={!canResume} onClick={onResumeSession} size="sm">
+                Resume
+              </ActionButton>
+              <ActionButton disabled={!canStop} onClick={onStopSession} size="sm" variant="ghost">
+                {sessionMode === "companion" ? "Leave" : "Stop"}
+              </ActionButton>
+              <ActionButton disabled={!canReset} onClick={onResetSession} size="sm" variant="ghost">
+                Reset
+              </ActionButton>
+            </div>
+          ) : null}
+        </SettingsSection>
 
-          <label className="flex flex-col gap-1">
+        <SettingsSection title="Capture">
+          <label className="flex flex-col gap-2">
             <FieldLabel>Microphone</FieldLabel>
             <select
               className={inputClass}
@@ -204,29 +182,44 @@ export function SessionSidebar({
             </select>
           </label>
 
-          <div className="flex items-center justify-between gap-3 py-1">
-            <div>
-              <FieldLabel>Include tab audio</FieldLabel>
-              <p className="mt-0.5 text-xs text-[var(--foreground)]">
-                {includeTabAudio ? "Mic + tab audio" : "Mic only"}
+          <label className="flex flex-col gap-2">
+            <FieldLabel>Language</FieldLabel>
+            <select
+              className={inputClass}
+              disabled={!canStart}
+              onChange={(event) => onLanguageChange(event.target.value as SessionLanguagePreference)}
+              value={languagePreference}
+            >
+              {sessionLanguageOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="flex items-start justify-between gap-4 rounded-3xl bg-[var(--surface-raised)] px-4 py-3">
+            <div className="space-y-1">
+              <FieldLabel className="text-[0.72rem]">Include tab audio</FieldLabel>
+              <p className="text-sm leading-6 text-[var(--foreground-muted)]">
+                {includeTabAudio ? "Capture mic and tab audio together." : "Capture microphone only."}
               </p>
             </div>
             <Toggle checked={includeTabAudio} disabled={!canStart} onChange={onIncludeTabAudioChange} />
           </div>
+        </SettingsSection>
 
-          <label className="flex flex-col gap-1">
-            <FieldLabel>Standing context</FieldLabel>
+        <SettingsSection title="Standing Context">
+          <label className="flex flex-col gap-2">
+            <FieldLabel>Context</FieldLabel>
             <textarea
-              className={cx(textareaClass, "min-h-[4.5rem]")}
+              className={cx(textareaClass, "min-h-[10rem]")}
               disabled={!canStart}
               onChange={(event) => onStaticUserSeedChange(event.target.value)}
-              placeholder="Vault path, preferred tools, how you like Buddy to behave across meetings."
-              rows={2}
+              placeholder="Preferred tools, recurring context, note conventions, or what you want Buddy to notice across meetings."
+              rows={5}
               value={staticUserSeed}
             />
-            <p className="text-[0.72rem] text-[var(--foreground-muted)]">
-              Things that stay true across meetings.
-            </p>
           </label>
 
           <div className="flex justify-end">
@@ -236,117 +229,46 @@ export function SessionSidebar({
               size="sm"
               type="button"
             >
-              {isSavingStandingContext ? "Saving..." : "Save standing context"}
+              {isSavingStandingContext ? "Saving..." : "Save context"}
             </ActionButton>
           </div>
-        </div>
+        </SettingsSection>
 
-        {/* ── Actions ── */}
-        {canPause || canResume || canStop || canReset ? (
-          <div className="grid grid-cols-2 gap-2 border-b border-[var(--line)] py-4">
-            <ActionButton disabled={!canPause} onClick={onPauseSession} size="sm">
-              Pause
-            </ActionButton>
-            <ActionButton disabled={!canResume} onClick={onResumeSession} size="sm">
-              Resume
-            </ActionButton>
-            <ActionButton disabled={!canStop} onClick={onStopSession} size="sm" variant="ghost">
-              {sessionMode === "companion" ? "Leave" : "Stop"}
-            </ActionButton>
-            <ActionButton disabled={!canReset} onClick={onResetSession} size="sm" variant="ghost">
-              Reset
-            </ActionButton>
-          </div>
+        {showCompanionSection ? (
+          <SettingsSection title="Companion">
+            <label className="flex flex-col gap-2">
+              <FieldLabel>Session ID</FieldLabel>
+              <input
+                className={inputClass}
+                disabled={!canStart}
+                onChange={(event) => onSessionIdInputChange(event.target.value)}
+                placeholder="Paste a live session ID"
+                value={sessionIdInput}
+              />
+            </label>
+
+            <div className="grid grid-cols-2 gap-2">
+              <ActionButton disabled={!canJoin} onClick={onJoinSession} size="sm">
+                Join
+              </ActionButton>
+              <ActionButton disabled={!sessionId} onClick={onCopySessionId} size="sm" variant="ghost">
+                Copy ID
+              </ActionButton>
+            </div>
+          </SettingsSection>
         ) : null}
 
-        {/* ── Companion ── */}
-        <div className="space-y-2 border-b border-[var(--line)] py-4">
-          <SectionLabel>Companion</SectionLabel>
-          <label className="flex flex-col gap-1">
-            <FieldLabel>Session ID</FieldLabel>
-            <input
-              className={inputClass}
-              disabled={!canStart}
-              onChange={(event) => onSessionIdInputChange(event.target.value)}
-              placeholder="Paste a session ID"
-              value={sessionIdInput}
-            />
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <ActionButton disabled={!canJoin} onClick={onJoinSession} size="sm">
-              Join
-            </ActionButton>
-            <ActionButton disabled={!sessionId} onClick={onCopySessionId} size="sm">
-              Copy ID
-            </ActionButton>
+        <SettingsSection title="Appearance">
+          <div className="flex items-center justify-between rounded-3xl bg-[var(--surface-raised)] px-4 py-3">
+            <div>
+              <FieldLabel className="text-[0.72rem]">Theme</FieldLabel>
+              <p className="mt-1 text-sm text-[var(--foreground-muted)]">
+                Toggle the light and dark shell.
+              </p>
+            </div>
+            <ThemeToggle />
           </div>
-        </div>
-
-        {/* ── Mic Level ── */}
-        <div className="border-b border-[var(--line)] py-4">
-          <div className="flex items-center justify-between gap-2">
-            <SectionLabel>Mic Level</SectionLabel>
-            <span className="mono text-[0.52rem] uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
-              {getSessionLanguageLabel(languagePreference)}
-            </span>
-          </div>
-          <div className="mt-3">
-            <MeterBar value={audioLevel} />
-          </div>
-          <p className="mt-2 truncate text-xs text-[var(--foreground-muted)]">{selectedMicLabel}</p>
-
-          {audioDiagnostics ? (
-            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
-              <div>
-                <dt className="mono text-[0.48rem] uppercase tracking-[0.2em] text-[var(--foreground-muted)]">RMS</dt>
-                <dd className="mt-0.5 mono text-[0.65rem] text-[var(--foreground)]">{audioDiagnostics.rms.toFixed(4)}</dd>
-              </div>
-              <div>
-                <dt className="mono text-[0.48rem] uppercase tracking-[0.2em] text-[var(--foreground-muted)]">Peak</dt>
-                <dd className="mt-0.5 mono text-[0.65rem] text-[var(--foreground)]">{audioDiagnostics.peak.toFixed(4)}</dd>
-              </div>
-              <div>
-                <dt className="mono text-[0.48rem] uppercase tracking-[0.2em] text-[var(--foreground-muted)]">Gate</dt>
-                <dd className="mt-0.5 mono text-[0.65rem] text-[var(--foreground)]">{audioDiagnostics.gateOpen ? "Open" : "Closed"}</dd>
-              </div>
-              <div>
-                <dt className="mono text-[0.48rem] uppercase tracking-[0.2em] text-[var(--foreground-muted)]">Candidates</dt>
-                <dd className="mt-0.5 mono text-[0.65rem] text-[var(--foreground)]">{audioDiagnostics.candidateChunks}</dd>
-              </div>
-              <div>
-                <dt className="mono text-[0.48rem] uppercase tracking-[0.2em] text-[var(--foreground-muted)]">Sent</dt>
-                <dd className="mt-0.5 mono text-[0.65rem] text-[var(--foreground)]">{audioDiagnostics.sentChunks}</dd>
-              </div>
-              <div>
-                <dt className="mono text-[0.48rem] uppercase tracking-[0.2em] text-[var(--foreground-muted)]">Dropped</dt>
-                <dd className="mt-0.5 mono text-[0.65rem] text-[var(--foreground)]">{audioDiagnostics.droppedChunks}</dd>
-              </div>
-            </dl>
-          ) : null}
-        </div>
-
-        {/* ── Session Details ── */}
-        {sessionDetails.length > 0 ? (
-          <div className="pt-4">
-            <SectionLabel>Details</SectionLabel>
-            <dl className="mt-2 space-y-2">
-              {sessionDetails.map((detail) => (
-                <div key={`${detail.label}-${detail.value}`}>
-                  <dt className="mono text-[0.48rem] uppercase tracking-[0.2em] text-[var(--foreground-muted)]">
-                    {detail.label}
-                  </dt>
-                  <dd
-                    className={`mt-0.5 break-words text-xs leading-5 text-[var(--foreground)] ${
-                      detail.mono ? "mono text-[0.65rem]" : ""
-                    }`}
-                  >
-                    {detail.value}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        ) : null}
+        </SettingsSection>
       </div>
     </div>
   );
