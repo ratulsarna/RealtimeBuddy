@@ -191,6 +191,40 @@ test("MeetingBroker routes capture controls to the active capture client session
   assert.deepEqual(session.askCalls, ["What changed?"]);
 });
 
+test("MeetingBroker forwards optional Buddy seed layers when starting a session", async () => {
+  let receivedOptions:
+    | {
+        staticUserSeed?: string;
+        meetingSeed?: string;
+      }
+    | undefined;
+  const broker = new MeetingBroker((options) => {
+    receivedOptions = options;
+    return createMockSession();
+  });
+  const socket = new MockSocket();
+
+  broker.attach(socket as never);
+  socket.emit(
+    "message",
+    Buffer.from(
+      JSON.stringify({
+        type: "start_session",
+        sampleRate: 48_000,
+        title: "Seeded session",
+        includeTabAudio: false,
+        languagePreference: "english",
+        staticUserSeed: "Ratul prefers concise cards.",
+        meetingSeed: "Goal: leave with a pilot owner.",
+      })
+    )
+  );
+  await flushAsyncWork();
+
+  assert.equal(receivedOptions?.staticUserSeed, "Ratul prefers concise cards.");
+  assert.equal(receivedOptions?.meetingSeed, "Goal: leave with a pilot owner.");
+});
+
 test("MeetingBroker keeps a session alive when the capture socket closes but a companion remains", async () => {
   const session = createMockSession();
   const broker = new MeetingBroker(() => session);

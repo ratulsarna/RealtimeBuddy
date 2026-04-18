@@ -6,6 +6,11 @@ import { fileURLToPath } from "node:url";
 import { resolveRealtimeLanguageCode, type SessionLanguagePreference } from "@realtimebuddy/shared/language-preferences";
 import type { ServerEvent, SessionCaptureState } from "@realtimebuddy/shared/protocol";
 
+import {
+  buildBuddyDeveloperInstructions,
+  buildBuddyTurnPrompt,
+  type BuddyResponse,
+} from "./buddy-contract";
 import { CodexAppServer } from "./codex-app-server";
 import { ElevenLabsBridge } from "./elevenlabs-bridge";
 import { buildMeetingNote } from "./note-builder";
@@ -22,6 +27,8 @@ type MeetingSessionOptions = {
   title: string;
   includeTabAudio: boolean;
   languagePreference: SessionLanguagePreference;
+  staticUserSeed?: string;
+  meetingSeed?: string;
   sendEvent: SendEvent;
 };
 
@@ -40,6 +47,11 @@ type QuestionAnswer = {
   question: string;
   answer: string;
   askedAt: string;
+};
+
+type BuddyResponseFailure = {
+  error: string;
+  stage: "json_parse" | "schema_validation";
 };
 
 export type MeetingSessionSnapshot = {
@@ -65,6 +77,7 @@ const DEFAULT_VAULT_PATH = path.join(homedir(), "ObsidianVault");
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_APP_DIR = path.resolve(SERVER_DIR, "..");
 const MAX_BUFFERED_AUDIO_CHUNKS = 240;
+const DEFAULT_STATIC_USER_SEED = process.env.BUDDY_STATIC_USER_SEED?.trim() ?? "";
 
 export function resolveConfiguredPath(
   configuredPath: string | undefined,
@@ -93,6 +106,8 @@ export class MeetingSession {
   private readonly includeTabAudio: boolean;
   private readonly languagePreference: SessionLanguagePreference;
   private readonly languageCode: string | undefined;
+  private readonly staticUserSeed: string;
+  private readonly meetingSeed: string;
   private readonly sendEvent: SendEvent;
   private readonly transcriptSegments: TranscriptSegment[] = [];
   private readonly provisionalSegments: ProvisionalSegment[] = [];
@@ -108,6 +123,7 @@ export class MeetingSession {
   private readonly logPath: string;
   private readonly logPathRelative: string;
   private readonly codexWorkingDirectory: string;
+  private readonly codexDeveloperInstructions: string;
   private codex: CodexAppServer | null = null;
   private readonly audioQueue: AudioChunk[] = [];
   private readonly pendingCommitProvisionalIds: string[] = [];
@@ -137,6 +153,8 @@ export class MeetingSession {
     this.includeTabAudio = options.includeTabAudio;
     this.languagePreference = options.languagePreference;
     this.languageCode = resolveRealtimeLanguageCode(this.languagePreference);
+    this.staticUserSeed = this.normalizeSeed(options.staticUserSeed, DEFAULT_STATIC_USER_SEED);
+    this.meetingSeed = this.normalizeSeed(options.meetingSeed);
     this.sendEvent = options.sendEvent;
     const safeFileTitle = this.sanitizeTitleForFileName(this.title);
     this.codexWorkingDirectory = resolveConfiguredPath(
@@ -153,6 +171,14 @@ export class MeetingSession {
     const logFileName = `${safeFileTitle} - ${this.fileStamp(this.startedAt)}.jsonl`;
     this.logPath = path.join(logFolder, logFileName);
     this.logPathRelative = path.relative(BACKEND_APP_DIR, this.logPath);
+    this.codexDeveloperInstructions = buildBuddyDeveloperInstructions({
+      includeTabAudio: this.includeTabAudio,
+      languagePreference: this.languagePreference,
+      meetingSeed: this.meetingSeed,
+      meetingTitle: this.title,
+      staticUserSeed: this.staticUserSeed,
+      workingDirectory: this.codexWorkingDirectory,
+    });
   }
 
   async start() {
@@ -161,6 +187,7 @@ export class MeetingSession {
     await mkdir(this.codexWorkingDirectory, { recursive: true });
     if (!this.codex) {
       this.codex = new CodexAppServer({
+        developerInstructions: this.codexDeveloperInstructions,
         workingDirectory: this.codexWorkingDirectory,
       });
     }
@@ -173,6 +200,11 @@ export class MeetingSession {
       languagePreference: this.languagePreference,
       languageCode: this.languageCode ?? "auto",
       codexWorkingDirectory: this.codexWorkingDirectory,
+      staticUserSeed: this.staticUserSeed || "none",
+      staticUserSeedLength: this.staticUserSeed.length,
+      meetingSeed: this.meetingSeed || "none",
+      meetingSeedLength: this.meetingSeed.length,
+      codexDeveloperInstructionsLength: this.codexDeveloperInstructions.length,
     });
 
     this.ensureElevenLabsConnected();
@@ -573,6 +605,7 @@ export class MeetingSession {
         try {
           if (!this.codex) {
             this.codex = new CodexAppServer({
+              developerInstructions: this.codexDeveloperInstructions,
               workingDirectory: this.codexWorkingDirectory,
             });
           }
@@ -590,6 +623,7 @@ export class MeetingSession {
           });
           void this.logEvent("codex_ready", {
             model,
+            codexDeveloperInstructionsLength: this.codexDeveloperInstructions.length,
           });
         } catch (error) {
           this.codexUnavailableMessage = `Buddy Q&A unavailable: ${String(error)}`;
@@ -623,6 +657,54 @@ export class MeetingSession {
     }
 
     return this.codexModel;
+  }
+
+  async generateBuddyResponse(
+    trigger: string,
+    context = this.buildBuddyContext()
+  ): Promise<{
+    response: BuddyResponse;
+    parseFailure: BuddyResponseFailure | null;
+  }> {
+    const model = await this.requireCodexReady();
+    const prompt = buildBuddyTurnPrompt({
+      context,
+      trigger,
+    });
+    const result = await this.codex?.askBuddy(prompt);
+    const fallbackResponse = this.noopBuddyResponse();
+
+    if (!result) {
+      return {
+        response: fallbackResponse,
+        parseFailure: {
+          error: "Buddy returned no result.",
+          stage: "schema_validation" as const,
+        },
+      };
+    }
+
+    await this.logEvent("buddy_response_received", {
+      model,
+      trigger,
+      shouldSurface: result.response.shouldSurface,
+      responseType: result.response.type,
+      rawText: this.truncateForLog(result.rawText),
+    });
+
+    if (!result.ok) {
+      await this.logEvent("buddy_response_parse_failed", {
+        trigger,
+        stage: result.failure.stage,
+        error: result.failure.error,
+        rawText: this.truncateForLog(result.rawText),
+      });
+    }
+
+    return {
+      response: result.response,
+      parseFailure: result.ok ? null : result.failure,
+    };
   }
 
   private async logEvent(type: string, payload: Record<string, string | number | boolean>) {
@@ -760,6 +842,48 @@ export class MeetingSession {
       "";
 
     return mostRecentText.slice(-48);
+  }
+
+  private buildBuddyContext() {
+    const transcriptContext = this.transcriptSegments
+      .slice(-24)
+      .map((segment) => `- [${segment.committedAt}] ${segment.text}`)
+      .join("\n");
+    const provisionalContext = this.provisionalSegments
+      .slice(-8)
+      .map((segment) => `- [pending ${segment.provisionalAt}] ${segment.text}`)
+      .join("\n");
+
+    return [
+      `Meeting title: ${this.title}`,
+      `Meeting seed: ${this.meetingSeed || "None provided."}`,
+      "",
+      "Recent transcript context:",
+      [transcriptContext, provisionalContext].filter(Boolean).join("\n") ||
+        "- No transcript context yet.",
+    ].join("\n");
+  }
+
+  private noopBuddyResponse(): BuddyResponse {
+    return {
+      shouldSurface: false,
+      type: "noop",
+      title: "",
+      body: "",
+      suggestedQuestion: null,
+    };
+  }
+
+  private normalizeSeed(primary: string | undefined, fallback = "") {
+    return primary?.trim() || fallback.trim();
+  }
+
+  private truncateForLog(value: string, maxLength = 1_200) {
+    if (value.length <= maxLength) {
+      return value;
+    }
+
+    return `${value.slice(0, maxLength)}...`;
   }
 
   private async waitForBridgeReady(timeoutMs = 15_000) {

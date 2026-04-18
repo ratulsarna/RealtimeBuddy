@@ -12,6 +12,8 @@ export type ClientEvent =
       title: string;
       includeTabAudio: boolean;
       languagePreference: SessionLanguagePreference;
+      staticUserSeed?: string;
+      meetingSeed?: string;
     }
   | {
       type: "join_session";

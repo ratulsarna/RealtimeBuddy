@@ -11,6 +11,7 @@ import { resolveConfiguredPath } from "./meeting-session";
 
 test("buildThreadStartParams anchors the Codex thread in the vault cwd", async () => {
   const params = await buildThreadStartParams({
+    developerInstructions: "You are RealtimeBuddy.",
     modelPromise: Promise.resolve("gpt-5.4"),
     workingDirectory: "/Users/ratulsarna/Vault/ObsidianVault",
   });
@@ -18,6 +19,7 @@ test("buildThreadStartParams anchors the Codex thread in the vault cwd", async (
   assert.equal(params.cwd, "/Users/ratulsarna/Vault/ObsidianVault");
   assert.equal(params.sandbox, "danger-full-access");
   assert.equal(params.approvalPolicy, "never");
+  assert.equal(params.developerInstructions, "You are RealtimeBuddy.");
 });
 
 test("buildCodexAppServerArgs starts the app-server in full-access mode", () => {

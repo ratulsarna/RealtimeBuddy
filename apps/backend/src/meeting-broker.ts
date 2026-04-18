@@ -289,6 +289,8 @@ export class MeetingBroker {
       title: message.title,
       includeTabAudio: message.includeTabAudio,
       languagePreference: message.languagePreference,
+      staticUserSeed: message.staticUserSeed,
+      meetingSeed: message.meetingSeed,
       sendEvent: (event) => {
         this.broadcast(hostedSession, event);
       },

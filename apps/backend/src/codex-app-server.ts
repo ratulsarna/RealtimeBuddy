@@ -1,6 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
 
+import { parseBuddyResponse, type BuddyParseResult } from "./buddy-contract";
+
 type JsonScalar = string | number | boolean | null;
 type JsonValue = JsonScalar | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
@@ -100,6 +102,7 @@ type PendingTurn = {
 };
 
 type CodexAppServerOptions = {
+  developerInstructions?: string;
   workingDirectory: string;
 };
 
@@ -141,6 +144,9 @@ export function buildQuestionPrompt(options: {
   workingDirectory: string;
 }) {
   return [
+    "RESPONSE_MODE: user_question",
+    "Answer the user's question in concise plain text.",
+    "",
     "Current live note:",
     options.context,
     "",
@@ -155,6 +161,7 @@ export function buildQuestionPrompt(options: {
 }
 
 export async function buildThreadStartParams(options: {
+  developerInstructions: string;
   modelPromise: Promise<string>;
   workingDirectory: string;
 }): Promise<ThreadStartParams> {
@@ -169,14 +176,14 @@ export async function buildThreadStartParams(options: {
     ephemeral: true,
     experimentalRawEvents: false,
     persistExtendedHistory: false,
-    developerInstructions:
-      "You are RealtimeBuddy, a fast ambient meeting assistant. The thread cwd is an Obsidian vault. Answer from the live meeting context first, but if the user explicitly asks about the vault, a file, or something outside the live note, inspect the relevant vault files before answering. Be concise and say clearly when the transcript or vault does not support a claim.",
+    developerInstructions: options.developerInstructions,
     serviceName: "realtimebuddy",
   };
 }
 
 export class CodexAppServer {
   private readonly process: ChildProcessWithoutNullStreams;
+  private readonly developerInstructions: string;
   private readonly workingDirectory: string;
   private readonly pendingRequests = new Map<string, PendingRequest>();
   private readonly notificationListeners = new Set<NotificationListener>();
@@ -187,6 +194,9 @@ export class CodexAppServer {
 
   constructor(options: CodexAppServerOptions) {
     this.workingDirectory = options.workingDirectory;
+    this.developerInstructions =
+      options.developerInstructions ??
+      "You are RealtimeBuddy, a fast ambient meeting assistant. Answer from the live meeting context first, and be concise.";
     this.process = spawn("codex", buildCodexAppServerArgs(), {
       cwd: this.workingDirectory,
       stdio: ["pipe", "pipe", "pipe"],
@@ -236,6 +246,96 @@ export class CodexAppServer {
     context: string,
     onDelta: (delta: string) => void
   ) {
+    return await this.runTurn(
+      buildQuestionPrompt({
+        context,
+        question,
+        workingDirectory: this.workingDirectory,
+      }),
+      onDelta
+    );
+  }
+
+  async askBuddy(prompt: string): Promise<BuddyParseResult> {
+    const rawText = await this.runTurn(prompt, () => undefined);
+    return parseBuddyResponse(rawText);
+  }
+
+  close() {
+    this.closedMessage = "Codex app-server closed.";
+    this.failPendingWork(this.closedMessage);
+    this.process.kill();
+  }
+
+  private async bootstrap() {
+    await this.request<InitializeResponse>("initialize", {
+      clientInfo: {
+        name: "realtimebuddy",
+        title: "RealtimeBuddy",
+        version: "0.1.0",
+      },
+      capabilities: {
+        experimentalApi: false,
+      },
+    });
+
+    this.notify("initialized", {});
+
+    const modelList = await this.request<ModelListResponse>("model/list", {
+      includeHidden: true,
+    });
+
+    return this.pickModel(modelList.data);
+  }
+
+  private async getThreadId() {
+    if (this.threadIdPromise) {
+      return await this.threadIdPromise;
+    }
+
+    this.threadIdPromise = this.createThread();
+    return await this.threadIdPromise;
+  }
+
+  private async createThread() {
+    const thread = await this.request<ThreadStartResponse>(
+      "thread/start",
+      await buildThreadStartParams({
+        developerInstructions: this.developerInstructions,
+        modelPromise: this.getSelectedModel(),
+        workingDirectory: this.workingDirectory,
+      })
+    );
+
+    return thread.thread.id;
+  }
+
+  private pickModel(models: ModelRecord[]) {
+    const visibleModels = models.filter((model) => !model.hidden);
+    const candidates = visibleModels.length > 0 ? visibleModels : models;
+
+    for (const preferredModel of PREFERRED_MODELS) {
+      if (!preferredModel) {
+        continue;
+      }
+
+      const match = candidates.find(
+        (candidate) =>
+          candidate.id === preferredModel || candidate.model === preferredModel
+      );
+
+      if (match) {
+        return match.model;
+      }
+    }
+
+    const defaultModel =
+      candidates.find((candidate) => candidate.isDefault) ?? candidates[0];
+
+    return defaultModel.model;
+  }
+
+  private async runTurn(inputText: string, onDelta: (delta: string) => void) {
     const threadId = await this.getThreadId();
     const turn = await this.request<TurnStartResponse>("turn/start", {
       threadId,
@@ -243,11 +343,7 @@ export class CodexAppServer {
       input: [
         {
           type: "text",
-          text: buildQuestionPrompt({
-            context,
-            question,
-            workingDirectory: this.workingDirectory,
-          }),
+          text: inputText,
           text_elements: [],
         },
       ],
@@ -304,79 +400,6 @@ export class CodexAppServer {
         listener,
       });
     });
-  }
-
-  close() {
-    this.closedMessage = "Codex app-server closed.";
-    this.failPendingWork(this.closedMessage);
-    this.process.kill();
-  }
-
-  private async bootstrap() {
-    await this.request<InitializeResponse>("initialize", {
-      clientInfo: {
-        name: "realtimebuddy",
-        title: "RealtimeBuddy",
-        version: "0.1.0",
-      },
-      capabilities: {
-        experimentalApi: false,
-      },
-    });
-
-    this.notify("initialized", {});
-
-    const modelList = await this.request<ModelListResponse>("model/list", {
-      includeHidden: true,
-    });
-
-    return this.pickModel(modelList.data);
-  }
-
-  private async getThreadId() {
-    if (this.threadIdPromise) {
-      return await this.threadIdPromise;
-    }
-
-    this.threadIdPromise = this.createThread();
-    return await this.threadIdPromise;
-  }
-
-  private async createThread() {
-    const thread = await this.request<ThreadStartResponse>(
-      "thread/start",
-      await buildThreadStartParams({
-        modelPromise: this.getSelectedModel(),
-        workingDirectory: this.workingDirectory,
-      })
-    );
-
-    return thread.thread.id;
-  }
-
-  private pickModel(models: ModelRecord[]) {
-    const visibleModels = models.filter((model) => !model.hidden);
-    const candidates = visibleModels.length > 0 ? visibleModels : models;
-
-    for (const preferredModel of PREFERRED_MODELS) {
-      if (!preferredModel) {
-        continue;
-      }
-
-      const match = candidates.find(
-        (candidate) =>
-          candidate.id === preferredModel || candidate.model === preferredModel
-      );
-
-      if (match) {
-        return match.model;
-      }
-    }
-
-    const defaultModel =
-      candidates.find((candidate) => candidate.isDefault) ?? candidates[0];
-
-    return defaultModel.model;
   }
 
   private notify(method: string, params: JsonObject) {
