@@ -16,6 +16,7 @@ import { SectionLabel } from "@/components/meeting-buddy/ui";
 type BuddyLaneProps = {
   events: BuddyEvent[];
   connectionState: ConnectionState;
+  hasPreservedMeetingState: boolean;
   staticUserSeed: string;
   meetingSeed: string;
   askHint: string;
@@ -32,6 +33,7 @@ const NUDGE_WINDOW_MS = 30_000;
 function deriveState(
   connectionState: ConnectionState,
   events: BuddyEvent[],
+  hasPreservedMeetingState: boolean,
   nowMs: number
 ): BuddyState {
   if (connectionState === "paused") return "paused";
@@ -52,7 +54,7 @@ function deriveState(
     return "noticing";
   }
 
-  if (events.length > 0) return "wrapup";
+  if (hasPreservedMeetingState) return "wrapup";
   return "idle";
 }
 
@@ -156,6 +158,7 @@ function EmptyState({ state }: { state: BuddyState }) {
 export function BuddyLane({
   events,
   connectionState,
+  hasPreservedMeetingState,
   staticUserSeed,
   meetingSeed,
   askHint,
@@ -174,8 +177,8 @@ export function BuddyLane({
   }, []);
 
   const state = useMemo(
-    () => deriveState(connectionState, events, nowMs),
-    [connectionState, events, nowMs]
+    () => deriveState(connectionState, events, hasPreservedMeetingState, nowMs),
+    [connectionState, events, hasPreservedMeetingState, nowMs]
   );
 
   const wrapGroups = useMemo(
@@ -200,9 +203,7 @@ export function BuddyLane({
 
       {/* Card stack / wrap-up groups */}
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        {showEmpty ? (
-          <EmptyState state={state} />
-        ) : isWrapup ? (
+        {isWrapup ? (
           <div className="space-y-6">
             <div>
               <p className="text-sm font-semibold text-[var(--foreground-strong)]">
@@ -212,23 +213,36 @@ export function BuddyLane({
                 {events.length} card{events.length === 1 ? "" : "s"} from this session.
               </p>
             </div>
-            {wrapGroups.map((group) => (
-              <div key={group.key}>
-                <SectionLabel>{group.label}</SectionLabel>
-                <ul className="mt-2 space-y-2.5">
-                  {group.events.map((event) => (
-                    <li key={event.id}>
-                      <BuddyCard
-                        animate={false}
-                        event={event}
-                        nowMs={nowMs}
-                      />
-                    </li>
-                  ))}
-                </ul>
+            {wrapGroups.length > 0 ? (
+              wrapGroups.map((group) => (
+                <div key={group.key}>
+                  <SectionLabel>{group.label}</SectionLabel>
+                  <ul className="mt-2 space-y-2.5">
+                    {group.events.map((event) => (
+                      <li key={event.id}>
+                        <BuddyCard
+                          animate={false}
+                          event={event}
+                          nowMs={nowMs}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-[var(--panel-border)] bg-[var(--surface-raised)] px-4 py-5">
+                <p className="text-sm font-medium text-[var(--foreground-strong)]">
+                  Meeting ended.
+                </p>
+                <p className="mt-1 text-sm text-[var(--foreground-muted)]">
+                  Buddy did not surface any cards this time, but the transcript and note stay available while you wrap up.
+                </p>
               </div>
-            ))}
+            )}
           </div>
+        ) : showEmpty ? (
+          <EmptyState state={state} />
         ) : (
           <ul className="space-y-2.5">
             {events.map((event) => (

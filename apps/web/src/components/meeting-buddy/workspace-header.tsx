@@ -9,11 +9,13 @@ import {
 type WorkspaceHeaderProps = {
   audioLevel: number;
   canPause: boolean;
+  canReset: boolean;
   canResume: boolean;
   canStart: boolean;
   canStop: boolean;
   connectionStateLabel: string;
   onPauseSession: () => void;
+  onResetSession: () => void;
   onResumeSession: () => void;
   onStartSession: () => void;
   onStopSession: () => void;
@@ -29,11 +31,13 @@ type WorkspaceHeaderProps = {
 export function WorkspaceHeader({
   audioLevel,
   canPause,
+  canReset,
   canResume,
   canStart,
   canStop,
   connectionStateLabel,
   onPauseSession,
+  onResetSession,
   onResumeSession,
   onStartSession,
   onStopSession,
@@ -103,6 +107,11 @@ export function WorkspaceHeader({
         {canStop && (
           <ActionButton onClick={onStopSession} size="sm" variant="ghost">
             {sessionMode === "companion" ? "Leave" : "Stop"}
+          </ActionButton>
+        )}
+        {canReset && (
+          <ActionButton onClick={onResetSession} size="sm" variant="ghost">
+            Reset
           </ActionButton>
         )}
       </div>

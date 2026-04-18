@@ -28,6 +28,7 @@ type SessionSidebarProps = {
   audioLevel: number;
   canJoin: boolean;
   canPause: boolean;
+  canReset: boolean;
   canResume: boolean;
   canSaveStandingContext: boolean;
   canStart: boolean;
@@ -42,6 +43,7 @@ type SessionSidebarProps = {
   onJoinSession: () => void;
   onLanguageChange: (value: SessionLanguagePreference) => void;
   onPauseSession: () => void;
+  onResetSession: () => void;
   onResumeSession: () => void;
   onSaveStandingContext: () => void;
   onSelectedMicChange: (value: string) => void;
@@ -68,6 +70,7 @@ export function SessionSidebar({
   audioLevel,
   canJoin,
   canPause,
+  canReset,
   canResume,
   canSaveStandingContext,
   canStart,
@@ -82,6 +85,7 @@ export function SessionSidebar({
   onJoinSession,
   onLanguageChange,
   onPauseSession,
+  onResetSession,
   onResumeSession,
   onSaveStandingContext,
   onSelectedMicChange,
@@ -238,7 +242,7 @@ export function SessionSidebar({
         </div>
 
         {/* ── Actions ── */}
-        {canPause || canResume || canStop ? (
+        {canPause || canResume || canStop || canReset ? (
           <div className="grid grid-cols-2 gap-2 border-b border-[var(--line)] py-4">
             <ActionButton disabled={!canPause} onClick={onPauseSession} size="sm">
               Pause
@@ -248,6 +252,9 @@ export function SessionSidebar({
             </ActionButton>
             <ActionButton disabled={!canStop} onClick={onStopSession} size="sm" variant="ghost">
               {sessionMode === "companion" ? "Leave" : "Stop"}
+            </ActionButton>
+            <ActionButton disabled={!canReset} onClick={onResetSession} size="sm" variant="ghost">
+              Reset
             </ActionButton>
           </div>
         ) : null}

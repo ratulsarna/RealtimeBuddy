@@ -98,6 +98,7 @@ export function MeetingBuddyApp({
   const captureIntentRef = useRef<CaptureIntent>("idle");
   const captureForwardingEnabledRef = useRef(true);
   const autoJoinAttemptedRef = useRef(false);
+  const initialAutoJoinSessionIdRef = useRef("");
   const joinSessionRef = useRef<(targetSessionId?: string) => Promise<void>>(async () => undefined);
   const statusMessageRef = useRef("Ready when you are.");
   const closeMessageRef = useRef<string | null>(null);
@@ -148,6 +149,7 @@ export function MeetingBuddyApp({
 
     const querySessionId = new URL(window.location.href).searchParams.get("session")?.trim() ?? "";
     if (querySessionId) {
+      initialAutoJoinSessionIdRef.current = querySessionId;
       setSessionIdInput(querySessionId);
     }
 
@@ -195,17 +197,9 @@ export function MeetingBuddyApp({
     setAudioLevel(0);
     setPartialTranscript("");
     setProvisionalEntries([]);
-    setTranscriptEntries([]);
-    setBuddyEvents([]);
     setCurrentAnswer("");
     setIsAsking(false);
-    setNoteMarkdown("");
-    setNotePathRelative("");
-    setLogPathRelative("");
     setAudioDiagnostics(null);
-    setModelName("");
-    setCaptureClientCount(0);
-    setCompanionClientCount(0);
     captureDisconnectedRef.current = false;
     answerBufferRef.current = "";
     pendingQuestionRef.current = "";
@@ -213,6 +207,31 @@ export function MeetingBuddyApp({
       window.clearTimeout(answerFlushTimerRef.current);
       answerFlushTimerRef.current = null;
     }
+  };
+
+  const resetMeetingState = () => {
+    resetLiveState();
+    setTranscriptEntries([]);
+    setBuddyEvents([]);
+    setQuestion("");
+    setMeetingSeed("");
+    setNoteMarkdown("");
+    setNotePathRelative("");
+    setLogPathRelative("");
+    setModelName("");
+    setCaptureClientCount(0);
+    setCompanionClientCount(0);
+    setSessionId("");
+    setSessionIdInput("");
+    setSessionMode(null);
+    setConnectionState("idle");
+    setStatusMessage("Ready when you are.");
+    setTitle("Session");
+    captureIntentRef.current = "idle";
+    captureForwardingEnabledRef.current = true;
+    pendingSocketMessagesRef.current = [];
+    closeMessageRef.current = null;
+    syncSessionQuery("");
   };
 
   const queueOrSendSocketMessage = (payload: string) => {
@@ -394,7 +413,7 @@ export function MeetingBuddyApp({
   };
 
   const startSession = () => {
-    resetLiveState();
+    resetMeetingState();
     setConnectionState("starting");
     setSessionMode("local_capture");
     setSessionId("");
@@ -448,10 +467,9 @@ export function MeetingBuddyApp({
       return;
     }
 
-    resetLiveState();
+    resetMeetingState();
     setConnectionState("connecting");
     setSessionMode("companion");
-    setSessionId(targetSessionId);
     setSessionIdInput(targetSessionId);
     setStatusMessage("Connecting to the live session...");
 
@@ -477,13 +495,15 @@ export function MeetingBuddyApp({
       return;
     }
 
-    if (connectionState !== "idle" || !sessionIdInput.trim()) {
+    const initialAutoJoinSessionId = initialAutoJoinSessionIdRef.current.trim();
+    if (connectionState !== "idle" || !initialAutoJoinSessionId) {
       return;
     }
 
     autoJoinAttemptedRef.current = true;
-    void joinSessionRef.current(sessionIdInput.trim());
-  }, [connectionState, sessionIdInput]);
+    initialAutoJoinSessionIdRef.current = "";
+    void joinSessionRef.current(initialAutoJoinSessionId);
+  }, [connectionState]);
 
   const pauseSession = () => {
     if (!socketRef.current || !captureRef.current || sessionMode !== "local_capture") {
@@ -555,7 +575,9 @@ export function MeetingBuddyApp({
       pendingSocketMessagesRef.current = [];
       setConnectionState("idle");
       setSessionMode(null);
-      setStatusMessage("Ready when you are.");
+      setCaptureClientCount(0);
+      setCompanionClientCount(0);
+      setStatusMessage("Session stopped.");
       syncSessionQuery("");
       return;
     }
@@ -855,12 +877,26 @@ export function MeetingBuddyApp({
     }
   };
 
-  const canStart = connectionState === "idle";
-  const canJoin = connectionState === "idle" && Boolean(sessionIdInput.trim());
+  const hasPreservedMeetingState = Boolean(
+    sessionId ||
+      notePathRelative ||
+      logPathRelative ||
+      noteMarkdown.trim() ||
+      partialTranscript.trim() ||
+      provisionalEntries.length > 0 ||
+      transcriptEntries.length > 0 ||
+      buddyEvents.length > 0
+  );
+  const canStart = connectionState === "idle" && !hasPreservedMeetingState;
+  const canJoin =
+    connectionState === "idle" &&
+    !hasPreservedMeetingState &&
+    Boolean(sessionIdInput.trim());
   const canPause = sessionMode === "local_capture" && connectionState === "live";
   const canResume = sessionMode === "local_capture" && connectionState === "paused";
   const canSaveStandingContext = canStart && !isSavingStandingContext;
   const canStop = connectionState !== "idle";
+  const canReset = connectionState === "idle" && hasPreservedMeetingState;
   const canAsk =
     Boolean(socketRef.current) &&
     !isAsking &&
@@ -868,10 +904,11 @@ export function MeetingBuddyApp({
 
   const askHint = canAsk
     ? "Ask about decisions, loose ends, next steps, or what just changed."
-    : "Start a session first, then ask questions here.";
+    : canReset
+      ? "Session ended. Reset when you want to start a fresh meeting."
+      : "Start a session first, then ask questions here.";
 
-  const showBrief =
-    connectionState === "idle" && !sessionId && buddyEvents.length === 0;
+  const showBrief = connectionState === "idle" && !hasPreservedMeetingState;
 
   const sessionMetrics: SessionMetric[] = [
     { label: "State", value: connectionStateLabel },
@@ -928,6 +965,7 @@ export function MeetingBuddyApp({
     canJoin,
     canPause,
     canResume,
+    canReset,
     canSaveStandingContext,
     canStart,
     canStop,
@@ -941,6 +979,7 @@ export function MeetingBuddyApp({
     onLanguageChange: setLanguagePreference,
     onPauseSession: pauseSession,
     onResumeSession: resumeSession,
+    onResetSession: resetMeetingState,
     onSaveStandingContext: () => { void saveStandingContext(); },
     onSelectedMicChange: setSelectedMicId,
     onSessionIdInputChange: setSessionIdInput,
@@ -968,11 +1007,13 @@ export function MeetingBuddyApp({
         audioLevel={audioLevel}
         canPause={canPause}
         canResume={canResume}
+        canReset={canReset}
         canStart={canStart}
         canStop={canStop}
         connectionStateLabel={connectionStateLabel}
         onPauseSession={pauseSession}
         onResumeSession={resumeSession}
+        onResetSession={resetMeetingState}
         onStartSession={startSession}
         onStopSession={stopSession}
         onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
@@ -1010,6 +1051,7 @@ export function MeetingBuddyApp({
               connectionState={connectionState}
               currentAnswer={currentAnswer}
               events={buddyEvents}
+              hasPreservedMeetingState={hasPreservedMeetingState}
               isAsking={isAsking}
               meetingSeed={meetingSeed}
               onQuestionChange={setQuestion}
