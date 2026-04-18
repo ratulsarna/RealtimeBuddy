@@ -3,11 +3,23 @@ import test from "node:test";
 
 import {
   buildBuddyDeveloperInstructions,
+  buildBuddyPrimingPrompt,
   parseBuddyResponse,
 } from "./buddy-contract";
 
-test("buildBuddyDeveloperInstructions includes both seed layers and response modes", () => {
-  const instructions = buildBuddyDeveloperInstructions({
+test("buildBuddyDeveloperInstructions keeps stable Buddy rules and omits meeting seed data", () => {
+  const instructions = buildBuddyDeveloperInstructions();
+
+  assert.match(instructions, /RESPONSE_MODE: buddy_event/);
+  assert.match(instructions, /RESPONSE_MODE: user_question/);
+  assert.match(instructions, /Buddy JSON schema/);
+  assert.doesNotMatch(instructions, /Static user seed:/);
+  assert.doesNotMatch(instructions, /Dynamic meeting seed:/);
+  assert.doesNotMatch(instructions, /Meeting startup context:/);
+});
+
+test("buildBuddyPrimingPrompt includes seed layers and startup context", () => {
+  const prompt = buildBuddyPrimingPrompt({
     includeTabAudio: true,
     languagePreference: "english",
     meetingSeed: "Goal: land on a next-step owner.",
@@ -16,12 +28,16 @@ test("buildBuddyDeveloperInstructions includes both seed layers and response mod
     workingDirectory: "/tmp/vault",
   });
 
-  assert.match(instructions, /Static user seed:/);
-  assert.match(instructions, /Ratul prefers short direct prompts\./);
-  assert.match(instructions, /Dynamic meeting seed:/);
-  assert.match(instructions, /Goal: land on a next-step owner\./);
-  assert.match(instructions, /RESPONSE_MODE: buddy_event/);
-  assert.match(instructions, /RESPONSE_MODE: user_question/);
+  assert.match(prompt, /Meeting startup context:/);
+  assert.match(prompt, /Meeting title: Design sync/);
+  assert.match(prompt, /Audio sources: microphone \+ tab audio/);
+  assert.match(prompt, /Preferred transcription language: english/);
+  assert.match(prompt, /Working directory: \/tmp\/vault/);
+  assert.match(prompt, /Static user seed:/);
+  assert.match(prompt, /Ratul prefers short direct prompts\./);
+  assert.match(prompt, /Dynamic meeting seed:/);
+  assert.match(prompt, /Goal: land on a next-step owner\./);
+  assert.match(prompt, /Return the required Buddy no-op JSON object only\./);
 });
 
 test("parseBuddyResponse accepts a valid surfaced Buddy card", () => {

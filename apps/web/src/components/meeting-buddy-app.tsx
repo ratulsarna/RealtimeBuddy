@@ -63,7 +63,7 @@ export function MeetingBuddyApp({
   const [sessionIdInput, setSessionIdInput] = useState("");
   const [includeTabAudio, setIncludeTabAudio] = useState(false);
   const [languagePreference, setLanguagePreference] = useState<SessionLanguagePreference>("auto");
-  const [title, setTitle] = useState("Meeting Buddy");
+  const [title, setTitle] = useState("Session");
   const [staticUserSeed, setStaticUserSeed] = useState(initialStaticUserSeed);
   const [meetingSeed, setMeetingSeed] = useState("");
   const [question, setQuestion] = useState("");
@@ -870,6 +870,9 @@ export function MeetingBuddyApp({
     ? "Ask about decisions, loose ends, next steps, or what just changed."
     : "Start a session first, then ask questions here.";
 
+  const showBrief =
+    connectionState === "idle" && !sessionId && buddyEvents.length === 0;
+
   const sessionMetrics: SessionMetric[] = [
     { label: "State", value: connectionStateLabel },
     { label: "Mode", value: sessionModeLabel },
@@ -941,7 +944,6 @@ export function MeetingBuddyApp({
     onSaveStandingContext: () => { void saveStandingContext(); },
     onSelectedMicChange: setSelectedMicId,
     onSessionIdInputChange: setSessionIdInput,
-    onStartSession: startSession,
     onStaticUserSeedChange: setStaticUserSeed,
     onStopSession: stopSession,
     onTitleChange: setTitle,
@@ -958,9 +960,6 @@ export function MeetingBuddyApp({
     statusTone,
     title,
   } as const;
-
-  const showBrief =
-    connectionState === "idle" && !sessionId && buddyEvents.length === 0;
 
   return (
     <main className="flex h-screen flex-col overflow-hidden">
@@ -979,6 +978,8 @@ export function MeetingBuddyApp({
         onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
         onTitleChange={setTitle}
         sessionMode={sessionMode}
+        showStartAction={!showBrief}
+        showTitleInput={!showBrief}
         statusTone={statusTone}
         title={title}
       />

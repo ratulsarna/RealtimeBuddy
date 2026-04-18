@@ -220,10 +220,8 @@ export function BuddyLane({
                     <li key={event.id}>
                       <BuddyCard
                         animate={false}
-                        canAsk={canAsk}
                         event={event}
                         nowMs={nowMs}
-                        onAskSuggested={(text) => onSendQuestion(text)}
                       />
                     </li>
                   ))}
@@ -236,10 +234,8 @@ export function BuddyLane({
             {events.map((event) => (
               <li key={event.id}>
                 <BuddyCard
-                  canAsk={canAsk}
                   event={event}
                   nowMs={nowMs}
-                  onAskSuggested={(text) => onSendQuestion(text)}
                 />
               </li>
             ))}

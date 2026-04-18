@@ -17,12 +17,7 @@ export function TranscriptPanel({
 }: TranscriptPanelProps) {
   return (
     <div className="p-5 space-y-4">
-      <div className="flex items-baseline justify-between gap-2">
-        <SectionLabel>Transcript</SectionLabel>
-        <span className="mono text-[0.5rem] uppercase tracking-widest text-[var(--foreground-muted)]">
-          Supporting context
-        </span>
-      </div>
+      <SectionLabel>Transcript</SectionLabel>
 
       {/* Live speech */}
       {partialTranscript ? (
@@ -76,7 +71,7 @@ export function TranscriptPanel({
           <p className="text-sm text-[var(--foreground-muted)]">
             {partialTranscript
               ? "Waiting for committed speech..."
-              : "Transcript will appear here once the session starts."}
+              : "Transcript appears here during the session."}
           </p>
         )}
       </div>

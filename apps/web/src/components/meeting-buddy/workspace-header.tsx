@@ -20,6 +20,8 @@ type WorkspaceHeaderProps = {
   onToggleSidebar: () => void;
   onTitleChange: (value: string) => void;
   sessionMode: SessionMode;
+  showStartAction: boolean;
+  showTitleInput: boolean;
   statusTone: "active" | "warning" | "neutral";
   title: string;
 };
@@ -38,6 +40,8 @@ export function WorkspaceHeader({
   onToggleSidebar,
   onTitleChange,
   sessionMode,
+  showStartAction,
+  showTitleInput,
   statusTone,
   title,
 }: WorkspaceHeaderProps) {
@@ -55,7 +59,10 @@ export function WorkspaceHeader({
 
       {/* Editable title - hidden on small screens */}
       <input
-        className="hidden min-w-0 max-w-[14rem] flex-shrink bg-transparent text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--foreground-muted)] md:block"
+        className={[
+          "min-w-0 max-w-[14rem] flex-shrink bg-transparent text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--foreground-muted)]",
+          showTitleInput ? "hidden md:block" : "hidden",
+        ].join(" ")}
         onChange={(event) => onTitleChange(event.target.value)}
         placeholder="Session title"
         value={title}
@@ -78,7 +85,7 @@ export function WorkspaceHeader({
 
       {/* Action buttons */}
       <div className="flex items-center gap-1.5">
-        {canStart && (
+        {canStart && showStartAction && (
           <ActionButton onClick={onStartSession} size="sm" variant="primary">
             Start
           </ActionButton>

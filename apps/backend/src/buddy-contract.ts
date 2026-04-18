@@ -36,7 +36,7 @@ export type BuddyParseResult =
       failure: BuddyParseFailure;
     };
 
-type BuddyDeveloperInstructionsOptions = {
+type BuddyPrimingPromptOptions = {
   includeTabAudio: boolean;
   languagePreference: SessionLanguagePreference;
   meetingSeed: string;
@@ -58,12 +58,7 @@ const NOOP_BUDDY_RESPONSE: BuddyResponse = {
   suggestedQuestion: null,
 };
 
-export function buildBuddyDeveloperInstructions(
-  options: BuddyDeveloperInstructionsOptions
-) {
-  const staticSeed = options.staticUserSeed || "None provided.";
-  const meetingSeed = options.meetingSeed || "None provided.";
-
+export function buildBuddyDeveloperInstructions() {
   return [
     "You are RealtimeBuddy, Ratul's AI co-chair during a live meeting.",
     "Your role is to quietly help Ratul in the moment, not narrate the meeting.",
@@ -99,8 +94,21 @@ export function buildBuddyDeveloperInstructions(
     '- If nothing timely should be shown, return a no-op object with `shouldSurface: false`, `type: "noop"`, empty `title`, empty `body`, and `suggestedQuestion: null`.',
     "- If `shouldSurface` is true, choose exactly one non-noop type and keep `title` plus `body` short and scannable.",
     "- `suggestedQuestion` is optional and must be null when not needed.",
+  ].join("\n");
+}
+
+export function buildBuddyPrimingPrompt(options: BuddyPrimingPromptOptions) {
+  const staticSeed = options.staticUserSeed || "None provided.";
+  const meetingSeed = options.meetingSeed || "None provided.";
+
+  return [
+    "RESPONSE_MODE: buddy_event",
+    "This is a silent setup turn for the start of a live meeting.",
+    "Use the context below to prime your behavior for future transcript-driven Buddy turns and future user questions in this same session.",
+    "Do not surface a card for this setup turn.",
+    "Return the required Buddy no-op JSON object only.",
     "",
-    "Meeting context:",
+    "Meeting startup context:",
     `- Meeting title: ${options.meetingTitle}`,
     `- Audio sources: microphone${options.includeTabAudio ? " + tab audio" : ""}`,
     `- Preferred transcription language: ${options.languagePreference}`,

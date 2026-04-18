@@ -11,6 +11,7 @@ import type {
 
 import {
   buildBuddyDeveloperInstructions,
+  buildBuddyPrimingPrompt,
   buildBuddyTurnPrompt,
   type BuddyResponse,
 } from "./buddy-contract";
@@ -28,6 +29,10 @@ type AudioChunk = {
 };
 
 type SendEvent = (event: ServerEvent) => void;
+type CreateCodexAppServer = (options: {
+  developerInstructions: string;
+  workingDirectory: string;
+}) => CodexSessionClient;
 
 type MeetingSessionOptions = {
   sampleRate: number;
@@ -37,6 +42,7 @@ type MeetingSessionOptions = {
   staticUserSeed?: string;
   meetingSeed?: string;
   sendEvent: SendEvent;
+  createCodexAppServer?: CreateCodexAppServer;
 };
 
 type TranscriptSegment = {
@@ -62,6 +68,11 @@ type BuddyResponseFailure = {
 };
 
 type SurfacedBuddyEvent = BuddyEvent;
+
+type CodexSessionClient = Pick<
+  CodexAppServer,
+  "ready" | "getSelectedModel" | "askBuddy" | "askQuestion" | "close"
+>;
 
 export type MeetingSessionSnapshot = {
   sessionId: string;
@@ -112,7 +123,8 @@ export class MeetingSession {
   private readonly logPathRelative: string;
   private readonly codexWorkingDirectory: string;
   private readonly codexDeveloperInstructions: string;
-  private codex: CodexAppServer | null = null;
+  private readonly createCodexAppServer: CreateCodexAppServer;
+  private codex: CodexSessionClient | null = null;
   private readonly audioQueue: AudioChunk[] = [];
   private readonly pendingCommitProvisionalIds: string[] = [];
   private readonly pendingBuddyTranscriptSegments: TranscriptSegment[] = [];
@@ -142,13 +154,16 @@ export class MeetingSession {
 
   constructor(options: MeetingSessionOptions) {
     this.sampleRate = options.sampleRate;
-    this.title = options.title.trim() || "Meeting Buddy";
+    this.title = options.title.trim() || "Session";
     this.includeTabAudio = options.includeTabAudio;
     this.languagePreference = options.languagePreference;
     this.languageCode = resolveRealtimeLanguageCode(this.languagePreference);
     this.staticUserSeed = this.normalizeSeed(options.staticUserSeed);
     this.meetingSeed = this.normalizeSeed(options.meetingSeed);
     this.sendEvent = options.sendEvent;
+    this.createCodexAppServer =
+      options.createCodexAppServer ??
+      ((codexOptions) => new CodexAppServer(codexOptions));
     const safeFileTitle = this.sanitizeTitleForFileName(this.title);
     this.codexWorkingDirectory = this.basePath;
 
@@ -161,14 +176,7 @@ export class MeetingSession {
     const logFileName = `${safeFileTitle} - ${this.fileStamp(this.startedAt)}.jsonl`;
     this.logPath = path.join(logFolder, logFileName);
     this.logPathRelative = path.relative(BACKEND_APP_DIR, this.logPath);
-    this.codexDeveloperInstructions = buildBuddyDeveloperInstructions({
-      includeTabAudio: this.includeTabAudio,
-      languagePreference: this.languagePreference,
-      meetingSeed: this.meetingSeed,
-      meetingTitle: this.title,
-      staticUserSeed: this.staticUserSeed,
-      workingDirectory: this.codexWorkingDirectory,
-    });
+    this.codexDeveloperInstructions = buildBuddyDeveloperInstructions();
   }
 
   async start() {
@@ -176,7 +184,7 @@ export class MeetingSession {
     await mkdir(path.dirname(this.logPath), { recursive: true });
     await mkdir(this.codexWorkingDirectory, { recursive: true });
     if (!this.codex) {
-      this.codex = new CodexAppServer({
+      this.codex = this.createCodexAppServer({
         developerInstructions: this.codexDeveloperInstructions,
         workingDirectory: this.codexWorkingDirectory,
       });
@@ -599,7 +607,7 @@ export class MeetingSession {
       this.codexStartupPromise = (async () => {
         try {
           if (!this.codex) {
-            this.codex = new CodexAppServer({
+            this.codex = this.createCodexAppServer({
               developerInstructions: this.codexDeveloperInstructions,
               workingDirectory: this.codexWorkingDirectory,
             });
@@ -607,6 +615,7 @@ export class MeetingSession {
 
           await this.codex.ready();
           const model = await this.codex.getSelectedModel();
+          await this.primeBuddySession(model);
           this.codexModel = model;
           if (this.stopped) {
             return;
@@ -713,6 +722,49 @@ export class MeetingSession {
       })}\n`,
       "utf8"
     );
+  }
+
+  private async primeBuddySession(model: string) {
+    const prompt = buildBuddyPrimingPrompt({
+      includeTabAudio: this.includeTabAudio,
+      languagePreference: this.languagePreference,
+      meetingSeed: this.meetingSeed,
+      meetingTitle: this.title,
+      staticUserSeed: this.staticUserSeed,
+      workingDirectory: this.codexWorkingDirectory,
+    });
+    const result = await this.codex?.askBuddy(prompt);
+
+    if (!result) {
+      await this.logEvent("buddy_priming_missing_result", {
+        model,
+      });
+      return;
+    }
+
+    await this.logEvent("buddy_priming_completed", {
+      model,
+      shouldSurface: result.response.shouldSurface,
+      responseType: result.response.type,
+      rawText: this.truncateForLog(result.rawText),
+    });
+
+    if (!result.ok) {
+      await this.logEvent("buddy_priming_parse_failed", {
+        model,
+        stage: result.failure.stage,
+        error: result.failure.error,
+        rawText: this.truncateForLog(result.rawText),
+      });
+      return;
+    }
+
+    if (result.response.shouldSurface || result.response.type !== "noop") {
+      await this.logEvent("buddy_priming_surface_ignored", {
+        model,
+        responseType: result.response.type,
+      });
+    }
   }
 
   private ensureElevenLabsConnected() {

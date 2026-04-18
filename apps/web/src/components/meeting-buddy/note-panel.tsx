@@ -18,7 +18,7 @@ export function NotePanel({ noteMarkdown, notePathRelative }: NotePanelProps) {
       <pre className="mono mt-3 max-h-[36rem] overflow-auto whitespace-pre-wrap text-sm leading-7 text-[var(--foreground)]">
         {noteMarkdown || (
           <span className="text-[var(--foreground-muted)]">
-            Notes will appear here once the session starts.
+            Notes appear here during the session.
           </span>
         )}
       </pre>

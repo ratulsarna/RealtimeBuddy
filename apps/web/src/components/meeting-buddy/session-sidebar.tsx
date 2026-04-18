@@ -46,7 +46,6 @@ type SessionSidebarProps = {
   onSaveStandingContext: () => void;
   onSelectedMicChange: (value: string) => void;
   onSessionIdInputChange: (value: string) => void;
-  onStartSession: () => void;
   onStaticUserSeedChange: (value: string) => void;
   onStopSession: () => void;
   onTitleChange: (value: string) => void;
@@ -87,7 +86,6 @@ export function SessionSidebar({
   onSaveStandingContext,
   onSelectedMicChange,
   onSessionIdInputChange,
-  onStartSession,
   onStaticUserSeedChange,
   onStopSession,
   onTitleChange,
@@ -127,14 +125,18 @@ export function SessionSidebar({
         <div className="pb-4">
           <div className="flex items-center justify-between gap-2">
             <SectionLabel>Session</SectionLabel>
-            <StatusBadge live={statusTone === "active"} tone={statusTone}>
-              {sessionMode === "companion" ? "Companion" : "Capture"}
-            </StatusBadge>
+            {sessionMode === "companion" ? (
+              <StatusBadge live={statusTone === "active"} tone={statusTone}>
+                Companion
+              </StatusBadge>
+            ) : null}
           </div>
           <h2 className="display mt-2 text-[1.1rem] font-medium leading-tight tracking-[-0.01em] text-[var(--foreground-strong)]">
             {sessionHeadline}
           </h2>
-          <p className="mt-1 text-xs leading-5 text-[var(--foreground-muted)]">{statusMessage}</p>
+          {statusMessage !== "Ready when you are." ? (
+            <p className="mt-1 text-xs leading-5 text-[var(--foreground-muted)]">{statusMessage}</p>
+          ) : null}
         </div>
 
         {/* ── Metrics ── */}
@@ -160,7 +162,7 @@ export function SessionSidebar({
             <input
               className={inputClass}
               onChange={(event) => onTitleChange(event.target.value)}
-              placeholder="Weekly review"
+              placeholder="Optional title"
               value={title}
             />
           </label>
@@ -219,7 +221,7 @@ export function SessionSidebar({
               value={staticUserSeed}
             />
             <p className="text-[0.72rem] text-[var(--foreground-muted)]">
-              Durable context that usually stays true meeting to meeting.
+              Things that stay true across meetings.
             </p>
           </label>
 
@@ -236,20 +238,19 @@ export function SessionSidebar({
         </div>
 
         {/* ── Actions ── */}
-        <div className="grid grid-cols-2 gap-2 border-b border-[var(--line)] py-4">
-          <ActionButton disabled={!canStart} onClick={onStartSession} size="sm" variant="primary">
-            Start
-          </ActionButton>
-          <ActionButton disabled={!canPause} onClick={onPauseSession} size="sm">
-            Pause
-          </ActionButton>
-          <ActionButton disabled={!canResume} onClick={onResumeSession} size="sm">
-            Resume
-          </ActionButton>
-          <ActionButton disabled={!canStop} onClick={onStopSession} size="sm" variant="ghost">
-            {sessionMode === "companion" ? "Leave" : "Stop"}
-          </ActionButton>
-        </div>
+        {canPause || canResume || canStop ? (
+          <div className="grid grid-cols-2 gap-2 border-b border-[var(--line)] py-4">
+            <ActionButton disabled={!canPause} onClick={onPauseSession} size="sm">
+              Pause
+            </ActionButton>
+            <ActionButton disabled={!canResume} onClick={onResumeSession} size="sm">
+              Resume
+            </ActionButton>
+            <ActionButton disabled={!canStop} onClick={onStopSession} size="sm" variant="ghost">
+              {sessionMode === "companion" ? "Leave" : "Stop"}
+            </ActionButton>
+          </div>
+        ) : null}
 
         {/* ── Companion ── */}
         <div className="space-y-2 border-b border-[var(--line)] py-4">

@@ -3,7 +3,6 @@
 import {
   ActionButton,
   FieldLabel,
-  SectionLabel,
   textareaClass,
   cx,
 } from "@/components/meeting-buddy/ui";
@@ -24,22 +23,21 @@ export function MeetingBriefCard({
   onOpenAdvanced,
 }: MeetingBriefCardProps) {
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-6 py-10">
       {/* Hero */}
       <div className="flex flex-col items-start gap-3">
         <span className="inline-flex items-center gap-2 rounded-full border border-[var(--panel-border)] bg-[var(--surface-input)] px-3 py-1">
           <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--glow)]" />
           <span className="mono text-[0.58rem] uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
-            Pre-meeting brief
+            Before you start
           </span>
         </span>
         <div>
           <h1 className="display text-[2rem] font-medium leading-[1.1] tracking-[-0.02em] text-[var(--foreground-strong)]">
-            Brief Buddy before you start.
+            Give Buddy a quick brief.
           </h1>
           <p className="mt-2 text-sm leading-6 text-[var(--foreground)]">
-            Buddy sits on your side of the meeting. A few lines here shape what it listens for
-            and when it speaks up.
+            A line or two helps it listen for the right moments.
           </p>
         </div>
       </div>
@@ -49,22 +47,19 @@ export function MeetingBriefCard({
         <div className="space-y-4">
           <label className="flex flex-col gap-1.5">
             <div className="flex items-baseline justify-between gap-2">
-              <FieldLabel>This meeting</FieldLabel>
-              <span className="mono text-[0.52rem] uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
-                Required-ish
-              </span>
+              <FieldLabel>Meeting brief</FieldLabel>
             </div>
             <textarea
               autoFocus
               className={cx(textareaClass, "min-h-[5.5rem]")}
               disabled={!canStart}
               onChange={(event) => onMeetingSeedChange(event.target.value)}
-              placeholder="e.g. Weekly review with Priya — want to get alignment on Q2 scope. Watch for decisions drifting without owners."
+              placeholder="e.g. Weekly review with Priya. Need alignment on Q2 scope. Watch for decisions without owners."
               rows={3}
               value={meetingSeed}
             />
             <p className="text-[0.72rem] text-[var(--foreground-muted)]">
-              What kind of meeting, what outcome you want, and what Buddy should watch for.
+              Goal, context, and anything Buddy should watch for.
             </p>
           </label>
         </div>
@@ -75,7 +70,7 @@ export function MeetingBriefCard({
             onClick={onOpenAdvanced}
             type="button"
           >
-            Advanced settings
+            More settings
           </button>
           <ActionButton
             disabled={!canStart}
@@ -87,17 +82,6 @@ export function MeetingBriefCard({
             Start meeting
           </ActionButton>
         </div>
-      </div>
-
-      {/* What Buddy will do */}
-      <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--surface-raised)] px-4 py-3">
-        <SectionLabel>What Buddy will do</SectionLabel>
-        <ul className="mt-2 grid gap-1.5 text-xs leading-6 text-[var(--foreground)] sm:grid-cols-2">
-          <li>Suggest a timely question</li>
-          <li>Remind you about what you wanted covered</li>
-          <li>Flag decisions forming without an owner</li>
-          <li>Surface signals that sound important</li>
-        </ul>
       </div>
     </div>
   );

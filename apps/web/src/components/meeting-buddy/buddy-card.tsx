@@ -9,8 +9,6 @@ import { cx } from "@/components/meeting-buddy/ui";
 type BuddyCardProps = {
   event: BuddyEvent;
   nowMs: number;
-  canAsk: boolean;
-  onAskSuggested: (question: string) => void;
   animate?: boolean;
 };
 
@@ -129,8 +127,6 @@ function formatRelative(createdIso: string, nowMs: number): string {
 export function BuddyCard({
   event,
   nowMs,
-  canAsk,
-  onAskSuggested,
   animate = true,
 }: BuddyCardProps) {
   const meta = TYPE_META[event.type] ?? TYPE_META.ask_this;
@@ -180,22 +176,16 @@ export function BuddyCard({
 
       {event.suggestedQuestion ? (
         <div className="mt-3 rounded-lg border border-[var(--line)] bg-black/25 px-3 py-2.5">
+          <p className="mono text-[0.52rem] uppercase tracking-[0.18em] text-[var(--foreground-muted)]">
+            Suggested question
+          </p>
+          <p className="mt-1 text-[0.72rem] text-[var(--foreground-muted)]">
+            Ask this in the meeting
+          </p>
           <p className="text-[0.82rem] leading-6 text-[var(--foreground-strong)]">
             &ldquo;{event.suggestedQuestion}&rdquo;
           </p>
           <div className="mt-2 flex items-center gap-2">
-            <button
-              className={cx(
-                "inline-flex h-7 items-center justify-center rounded-md px-2.5 text-[0.72rem] font-medium transition",
-                "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] shadow-[0_0_12px_var(--glow)]",
-                "disabled:opacity-40 disabled:pointer-events-none"
-              )}
-              disabled={!canAsk}
-              onClick={() => onAskSuggested(event.suggestedQuestion as string)}
-              type="button"
-            >
-              Ask it
-            </button>
             <button
               className="inline-flex h-7 items-center justify-center rounded-md border border-[var(--line)] bg-[var(--surface-raised)] px-2.5 text-[0.72rem] font-medium text-[var(--foreground)] transition hover:bg-[var(--surface-hover)]"
               onClick={() => void handleCopy()}
