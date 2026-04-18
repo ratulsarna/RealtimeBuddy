@@ -8,6 +8,12 @@ export function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
+export const inputClass =
+  "h-9 w-full rounded-lg border border-[var(--line)] bg-white/[0.03] px-3 text-sm text-[var(--foreground-strong)] outline-none transition placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/40 focus:bg-white/[0.04] disabled:opacity-50";
+
+export const textareaClass =
+  "w-full resize-none rounded-lg border border-[var(--line)] bg-white/[0.03] px-3 py-2 text-sm leading-5 text-[var(--foreground-strong)] outline-none transition placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/40 focus:bg-white/[0.04] disabled:opacity-50";
+
 export function SectionLabel({
   children,
   className,

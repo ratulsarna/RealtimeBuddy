@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { BuddyLane } from "@/components/meeting-buddy/buddy-lane";
 import {
   formatConnectionStateLabel,
   formatSessionModeLabel,
   getSessionHeadline,
   getStatusTone,
 } from "@/components/meeting-buddy/format";
-import { LiveQaPanel } from "@/components/meeting-buddy/live-qa-panel";
+import { MeetingBriefCard } from "@/components/meeting-buddy/meeting-brief-card";
 import { NotePanel } from "@/components/meeting-buddy/note-panel";
 import { SessionSidebar } from "@/components/meeting-buddy/session-sidebar";
 import { TranscriptPanel } from "@/components/meeting-buddy/transcript-panel";
@@ -18,7 +19,6 @@ import type {
   CommittedTranscriptEntry,
   ConnectionState,
   PendingTranscriptEntry,
-  QuestionAnswer,
   SessionDetail,
   SessionMetric,
   SessionMode,
@@ -35,11 +35,22 @@ import {
   getSessionLanguageLabel,
   type SessionLanguagePreference,
 } from "@realtimebuddy/shared/language-preferences";
-import { type ServerEvent } from "@realtimebuddy/shared/protocol";
+import { type BuddyEvent, type ServerEvent } from "@realtimebuddy/shared/protocol";
 
 type MeetingBuddyAppProps = {
   backendBaseUrl?: string;
 };
+
+function dedupeBuddyEventsById(events: BuddyEvent[]): BuddyEvent[] {
+  const seen = new Set<string>();
+  const result: BuddyEvent[] = [];
+  for (const event of events) {
+    if (seen.has(event.id)) continue;
+    seen.add(event.id);
+    result.push(event);
+  }
+  return result;
+}
 
 export function MeetingBuddyApp({
   backendBaseUrl = "",
@@ -51,6 +62,8 @@ export function MeetingBuddyApp({
   const [includeTabAudio, setIncludeTabAudio] = useState(false);
   const [languagePreference, setLanguagePreference] = useState<SessionLanguagePreference>("auto");
   const [title, setTitle] = useState("Meeting Buddy");
+  const [staticUserSeed, setStaticUserSeed] = useState("");
+  const [meetingSeed, setMeetingSeed] = useState("");
   const [question, setQuestion] = useState("");
   const [microphones, setMicrophones] = useState<AudioInputDevice[]>([]);
   const [selectedMicId, setSelectedMicId] = useState("");
@@ -64,7 +77,7 @@ export function MeetingBuddyApp({
   const [statusMessage, setStatusMessage] = useState("Ready when you are.");
   const [modelName, setModelName] = useState("");
   const [currentAnswer, setCurrentAnswer] = useState("");
-  const [questionAnswers, setQuestionAnswers] = useState<QuestionAnswer[]>([]);
+  const [buddyEvents, setBuddyEvents] = useState<BuddyEvent[]>([]);
   const [audioDiagnostics, setAudioDiagnostics] = useState<AudioDiagnostics | null>(null);
   const [captureClientCount, setCaptureClientCount] = useState(0);
   const [companionClientCount, setCompanionClientCount] = useState(0);
@@ -176,7 +189,7 @@ export function MeetingBuddyApp({
     setPartialTranscript("");
     setProvisionalEntries([]);
     setTranscriptEntries([]);
-    setQuestionAnswers([]);
+    setBuddyEvents([]);
     setCurrentAnswer("");
     setIsAsking(false);
     setNoteMarkdown("");
@@ -385,6 +398,9 @@ export function MeetingBuddyApp({
     const requestId = captureRequestIdRef.current + 1;
     captureRequestIdRef.current = requestId;
 
+    const trimmedStaticUserSeed = staticUserSeed.trim();
+    const trimmedMeetingSeed = meetingSeed.trim();
+
     startCapture(
       async (capture) => {
         try {
@@ -395,6 +411,8 @@ export function MeetingBuddyApp({
             title,
             includeTabAudio: capture.tabAudioEnabled,
             languagePreference,
+            ...(trimmedStaticUserSeed ? { staticUserSeed: trimmedStaticUserSeed } : {}),
+            ...(trimmedMeetingSeed ? { meetingSeed: trimmedMeetingSeed } : {}),
           });
         } catch (error) {
           capture.stop();
@@ -603,13 +621,7 @@ export function MeetingBuddyApp({
           }))
           .reverse()
       );
-      setQuestionAnswers(
-        event.questionAnswers.map((entry) => ({
-          question: entry.question,
-          answer: entry.answer,
-          askedAt: entry.askedAt,
-        }))
-      );
+      setBuddyEvents(dedupeBuddyEventsById(event.buddyEvents));
       setNoteMarkdown(event.markdown);
       setCaptureClientCount(event.captureClients);
       setCompanionClientCount(event.companionClients);
@@ -686,6 +698,15 @@ export function MeetingBuddyApp({
       return;
     }
 
+    if (event.type === "buddy_event") {
+      setBuddyEvents((current) =>
+        current.some((entry) => entry.id === event.event.id)
+          ? current
+          : [event.event, ...current]
+      );
+      return;
+    }
+
     if (event.type === "session_paused") {
       captureIntentRef.current = "idle";
       captureForwardingEnabledRef.current = true;
@@ -732,13 +753,6 @@ export function MeetingBuddyApp({
       }
       answerBufferRef.current = "";
       setIsAsking(false);
-      setQuestionAnswers((current) => [
-        {
-          question: pendingQuestionRef.current,
-          answer: event.text,
-        },
-        ...current,
-      ]);
       pendingQuestionRef.current = "";
       setCurrentAnswer("");
       return;
@@ -774,9 +788,10 @@ export function MeetingBuddyApp({
     }
   };
 
-  const sendQuestion = () => {
-    const trimmedQuestion = question.trim();
-    if (!trimmedQuestion || !socketRef.current) {
+  const sendQuestion = (explicitText?: string) => {
+    const source = explicitText !== undefined ? explicitText : question;
+    const trimmedQuestion = source.trim();
+    if (!trimmedQuestion || !socketRef.current || isAsking) {
       return;
     }
 
@@ -790,7 +805,9 @@ export function MeetingBuddyApp({
         question: trimmedQuestion,
       })
     );
-    setQuestion("");
+    if (explicitText === undefined) {
+      setQuestion("");
+    }
   };
 
   const canStart = connectionState === "idle";
@@ -891,6 +908,9 @@ export function MeetingBuddyApp({
     title,
   } as const;
 
+  const showBrief =
+    connectionState === "idle" && !sessionId && buddyEvents.length === 0;
+
   return (
     <main className="flex h-screen flex-col overflow-hidden">
       {/* ── Top Bar ── */}
@@ -919,37 +939,49 @@ export function MeetingBuddyApp({
           <SessionSidebar {...sidebarProps} />
         </div>
 
-        {/* Center column — Q&A + Notes (+ Transcript on mobile) */}
-        <div className="min-w-0 flex-1 overflow-y-auto">
-          <LiveQaPanel
-            askHint={askHint}
-            canAsk={canAsk}
-            currentAnswer={currentAnswer}
-            isAsking={isAsking}
-            onQuestionChange={setQuestion}
-            onSendQuestion={sendQuestion}
-            question={question}
-            questionAnswers={questionAnswers}
-          />
-          <NotePanel noteMarkdown={noteMarkdown} notePathRelative={notePathRelative} />
+        {/* Main stage — pre-meeting brief OR Buddy lane */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {showBrief ? (
+            <div className="flex-1 overflow-y-auto">
+              <MeetingBriefCard
+                canStart={canStart}
+                meetingSeed={meetingSeed}
+                onMeetingSeedChange={setMeetingSeed}
+                onOpenAdvanced={() => setSidebarOpen(true)}
+                onStartSession={startSession}
+                onStaticUserSeedChange={setStaticUserSeed}
+                staticUserSeed={staticUserSeed}
+              />
+            </div>
+          ) : (
+            <BuddyLane
+              askHint={askHint}
+              canAsk={canAsk}
+              connectionState={connectionState}
+              currentAnswer={currentAnswer}
+              events={buddyEvents}
+              isAsking={isAsking}
+              meetingSeed={meetingSeed}
+              onQuestionChange={setQuestion}
+              onSendQuestion={sendQuestion}
+              question={question}
+              staticUserSeed={staticUserSeed}
+            />
+          )}
+        </div>
 
-          {/* Transcript stacked below on mobile only */}
-          <div className="border-t border-[var(--line)] md:hidden">
+        {/* Supporting column — transcript (hero) + notes (compact) */}
+        <div className="hidden w-80 flex-shrink-0 flex-col border-l border-[var(--panel-border)] md:flex xl:w-96">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <TranscriptPanel
               partialTranscript={partialTranscript}
               provisionalEntries={provisionalEntries}
               transcriptEntries={transcriptEntries}
             />
           </div>
-        </div>
-
-        {/* Transcript column — tablet+ */}
-        <div className="hidden w-80 flex-shrink-0 overflow-y-auto border-l border-[var(--panel-border)] md:block xl:w-96">
-          <TranscriptPanel
-            partialTranscript={partialTranscript}
-            provisionalEntries={provisionalEntries}
-            transcriptEntries={transcriptEntries}
-          />
+          <div className="max-h-64 flex-shrink-0 overflow-y-auto border-t border-[var(--panel-border)] bg-white/[0.015]">
+            <NotePanel noteMarkdown={noteMarkdown} notePathRelative={notePathRelative} />
+          </div>
         </div>
       </div>
 

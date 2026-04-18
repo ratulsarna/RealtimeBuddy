@@ -18,6 +18,7 @@ import {
   SectionLabel,
   StatusBadge,
   Toggle,
+  inputClass,
 } from "@/components/meeting-buddy/ui";
 
 type SessionSidebarProps = {
@@ -55,9 +56,6 @@ type SessionSidebarProps = {
   statusTone: "active" | "warning" | "neutral";
   title: string;
 };
-
-const inputClass =
-  "h-9 w-full rounded-lg border border-[var(--line)] bg-white/[0.03] px-3 text-sm text-[var(--foreground-strong)] outline-none transition placeholder:text-[var(--foreground-muted)] focus:border-[var(--accent)]/40 focus:bg-white/[0.04] disabled:opacity-50";
 
 export function SessionSidebar({
   audioDiagnostics,

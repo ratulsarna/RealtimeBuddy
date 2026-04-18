@@ -17,7 +17,12 @@ export function TranscriptPanel({
 }: TranscriptPanelProps) {
   return (
     <div className="p-5 space-y-4">
-      <SectionLabel>Transcript</SectionLabel>
+      <div className="flex items-baseline justify-between gap-2">
+        <SectionLabel>Transcript</SectionLabel>
+        <span className="mono text-[0.5rem] uppercase tracking-widest text-[var(--foreground-muted)]">
+          Supporting context
+        </span>
+      </div>
 
       {/* Live speech */}
       {partialTranscript ? (

@@ -122,6 +122,16 @@ select {
   animation: slideInRight 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.buddy-card-enter {
+  animation: buddyCardEnter 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.buddy-lane-backdrop {
+  background:
+    radial-gradient(ellipse at 50% -20%, rgba(232, 128, 78, 0.08), transparent 55%),
+    linear-gradient(180deg, rgba(232, 128, 78, 0.02), transparent 40%);
+}
+
 @keyframes livePulse {
   0% {
     box-shadow:
@@ -149,9 +159,38 @@ select {
   }
 }
 
+@keyframes buddyCardEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes buddyPulseRing {
+  0% {
+    box-shadow: 0 0 0 0 rgba(232, 128, 78, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(232, 128, 78, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(232, 128, 78, 0);
+  }
+}
+
+.buddy-pulse-ring {
+  animation: buddyPulseRing 1.6s ease-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .live-dot,
-  .slide-in-right {
+  .slide-in-right,
+  .buddy-card-enter,
+  .buddy-pulse-ring {
     animation: none;
   }
 }
