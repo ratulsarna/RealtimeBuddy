@@ -270,7 +270,7 @@ async function seedVaultFixture(scenario: ValidationScenario) {
     [
       "# RAT-214 Codex Context",
       "",
-      "This fixture exists so automated validation can confirm the Codex thread is rooted in the Obsidian vault.",
+      "This fixture exists so automated validation can confirm the Codex thread is rooted in the local RealtimeBuddy base path.",
       `The session title for this fixture is ${scenario.title}.`,
       "The exact launch mascot is Lantern Otter.",
       "",
@@ -293,7 +293,7 @@ async function waitForExpectedNote(
     await delay(1_000);
   }
 
-  throw new Error(`Obsidian note for "${title}" did not contain the expected content.`);
+  throw new Error(`Note for "${title}" did not contain the expected content.`);
 }
 
 async function readLatestNote(env: ValidationEnv, title: string) {

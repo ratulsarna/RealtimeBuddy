@@ -64,7 +64,7 @@ test("buildTurnStartParams applies the configured reasoning effort to each turn"
   }
 });
 
-test("buildQuestionPrompt keeps the live note primary while exposing the vault cwd", () => {
+test("buildQuestionPrompt keeps the live note primary while exposing the working directory", () => {
   const prompt = buildQuestionPrompt({
     context: "Current transcript context",
     question: "What does the vault say about the mascot?",
@@ -72,9 +72,9 @@ test("buildQuestionPrompt keeps the live note primary while exposing the vault c
   });
 
   assert.match(prompt, /Current live note:/);
-  assert.match(prompt, /Obsidian vault working directory:/);
+  assert.match(prompt, /Local working directory:/);
   assert.match(prompt, /Answer using the transcript and note context above first/);
-  assert.match(prompt, /explicitly asks about the vault, a file/);
+  assert.match(prompt, /explicitly asks about the working tree, a file/);
 });
 
 test("resolveConfiguredPath expands a home-directory shorthand path", () => {

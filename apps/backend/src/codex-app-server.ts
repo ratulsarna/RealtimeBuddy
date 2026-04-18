@@ -170,13 +170,13 @@ export function buildQuestionPrompt(options: {
     "Current live note:",
     options.context,
     "",
-    "Obsidian vault working directory:",
+    "Local working directory:",
     options.workingDirectory,
     "",
     "User question:",
     options.question,
     "",
-    "Answer using the transcript and note context above first. If the user explicitly asks about the vault, a file, or something outside the live note, inspect the relevant Obsidian vault files rooted at the working directory above before answering. Be concise and direct. If something is uncertain, say that plainly.",
+    "Answer using the transcript and note context above first. If the user explicitly asks about the working tree, a file, or something outside the live note, inspect the relevant files rooted at the working directory above before answering. Be concise and direct. If something is uncertain, say that plainly.",
   ].join("\n");
 }
 

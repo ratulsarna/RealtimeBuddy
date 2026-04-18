@@ -29,7 +29,7 @@ Important values:
 `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. When unset or invalid, the backend
 defaults to `high`.
 
-For the demo backend, `REALTIMEBUDDY_BASE_PATH` is the single base directory. When unset, it
+`REALTIMEBUDDY_BASE_PATH` is the single base directory. When unset, it
 defaults to `~/.realtimebuddy`. Buddy writes notes under
 `REALTIMEBUDDY_BASE_PATH/Notes/`, Codex reads from that same tree, and the backend stores standing
 context in `~/.realtimebuddy/config.json`.
