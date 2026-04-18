@@ -81,12 +81,6 @@ pnpm build
 pnpm test
 ```
 
-There is also a Playwright validation script:
-
-```bash
-pnpm e2e:validate
-```
-
 Manual testing is often the fastest path for realtime behavior.
 
 ## Limitations

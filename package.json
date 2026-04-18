@@ -14,7 +14,6 @@
     "start:backend": "pnpm --filter @realtimebuddy/backend start",
     "start:web": "pnpm --filter @realtimebuddy/web start",
     "lint": "pnpm -r --if-present lint",
-    "test": "pnpm -r --if-present test",
-    "e2e:validate": "pnpm --filter @realtimebuddy/web e2e:validate"
+    "test": "pnpm -r --if-present test"
   }
 }
