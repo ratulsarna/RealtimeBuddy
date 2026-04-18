@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { BuddyEvent, BuddyEventType } from "@realtimebuddy/shared/protocol";
 
-import { AskBuddyDock } from "@/components/meeting-buddy/ask-buddy-dock";
 import { BuddyCard } from "@/components/meeting-buddy/buddy-card";
 import {
   BuddyStatusStrip,
@@ -19,13 +18,6 @@ type BuddyLaneProps = {
   hasPreservedMeetingState: boolean;
   staticUserSeed: string;
   meetingSeed: string;
-  askHint: string;
-  canAsk: boolean;
-  currentAnswer: string;
-  isAsking: boolean;
-  question: string;
-  onQuestionChange: (value: string) => void;
-  onSendQuestion: (explicit?: string) => void;
 };
 
 const NUDGE_WINDOW_MS = 30_000;
@@ -161,13 +153,6 @@ export function BuddyLane({
   hasPreservedMeetingState,
   staticUserSeed,
   meetingSeed,
-  askHint,
-  canAsk,
-  currentAnswer,
-  isAsking,
-  question,
-  onQuestionChange,
-  onSendQuestion,
 }: BuddyLaneProps) {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -235,7 +220,7 @@ export function BuddyLane({
                     Meeting ended.
                   </p>
                   <p className="mt-2 text-sm leading-6 text-[var(--foreground-muted)]">
-                    Buddy did not surface any cards this time, but the transcript and note stay available while you wrap up.
+                    Buddy did not surface any cards this time, but the transcript and Buddy Q&amp;A stay available while you wrap up.
                   </p>
                 </div>
               )}
@@ -254,18 +239,6 @@ export function BuddyLane({
               ))}
             </ul>
           )}
-        </div>
-
-        <div className="flex-shrink-0 py-2">
-          <AskBuddyDock
-            askHint={askHint}
-            canAsk={canAsk}
-            currentAnswer={currentAnswer}
-            isAsking={isAsking}
-            onQuestionChange={onQuestionChange}
-            onSendQuestion={onSendQuestion}
-            question={question}
-          />
         </div>
       </div>
     </section>

@@ -12,12 +12,19 @@ import { cx } from "@/components/meeting-buddy/ui";
 type SessionDrawerTab = "transcript" | "qa";
 
 type SessionDrawerProps = {
+  askHint: string;
+  canAsk: boolean;
+  currentAnswer: string;
+  isAsking: boolean;
   onClose: () => void;
+  onQuestionChange: (value: string) => void;
+  onSendQuestion: (explicit?: string) => void;
   tab: SessionDrawerTab;
   onTabChange: (tab: SessionDrawerTab) => void;
   partialTranscript: string;
   provisionalEntries: PendingTranscriptEntry[];
   qaMarkdown: string;
+  question: string;
   transcriptEntries: CommittedTranscriptEntry[];
 };
 
@@ -48,12 +55,19 @@ function TabButton({
 }
 
 export function SessionDrawer({
+  askHint,
+  canAsk,
+  currentAnswer,
+  isAsking,
   onClose,
+  onQuestionChange,
+  onSendQuestion,
   tab,
   onTabChange,
   partialTranscript,
   provisionalEntries,
   qaMarkdown,
+  question,
   transcriptEntries,
 }: SessionDrawerProps) {
   const segmented = (
@@ -71,15 +85,26 @@ export function SessionDrawer({
     <DrawerShell onClose={onClose} title="Activity" headerExtra={null}>
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex-shrink-0 px-6 pb-2 pt-4">{segmented}</div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-4">
+        <div className="min-h-0 flex-1 px-6 pb-6 pt-4">
           {tab === "transcript" ? (
-            <TranscriptPanel
-              partialTranscript={partialTranscript}
-              provisionalEntries={provisionalEntries}
-              transcriptEntries={transcriptEntries}
-            />
+            <div className="h-full overflow-y-auto">
+              <TranscriptPanel
+                partialTranscript={partialTranscript}
+                provisionalEntries={provisionalEntries}
+                transcriptEntries={transcriptEntries}
+              />
+            </div>
           ) : (
-            <BuddyQaPanel qaMarkdown={qaMarkdown} />
+            <BuddyQaPanel
+              askHint={askHint}
+              canAsk={canAsk}
+              currentAnswer={currentAnswer}
+              isAsking={isAsking}
+              onQuestionChange={onQuestionChange}
+              onSendQuestion={onSendQuestion}
+              qaMarkdown={qaMarkdown}
+              question={question}
+            />
           )}
         </div>
       </div>

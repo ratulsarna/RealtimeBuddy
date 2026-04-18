@@ -968,27 +968,27 @@ export function MeetingBuddyApp({
           <div className="mx-auto flex h-full w-full max-w-[1480px] min-w-0 flex-col gap-4 overflow-hidden px-4 pb-4 pt-6 sm:px-6 lg:flex-row lg:gap-6 lg:px-8 lg:pb-6">
             <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
               <BuddyLane
-                askHint={askHint}
-                canAsk={canAsk}
                 connectionState={connectionState}
-                currentAnswer={currentAnswer}
                 events={buddyEvents}
                 hasPreservedMeetingState={hasPreservedMeetingState}
-                isAsking={isAsking}
                 meetingSeed={meetingSeed}
-                onQuestionChange={setQuestion}
-                onSendQuestion={sendQuestion}
-                question={question}
                 staticUserSeed={staticUserSeed}
               />
             </div>
 
             <ActivityRail
+              askHint={askHint}
+              canAsk={canAsk}
               className="hidden h-full flex-shrink-0 lg:flex lg:w-[22rem] xl:w-[24rem]"
+              currentAnswer={currentAnswer}
+              isAsking={isAsking}
+              onQuestionChange={setQuestion}
+              onSendQuestion={sendQuestion}
               onTabChange={setSecondaryPanelTab}
               partialTranscript={partialTranscript}
               provisionalEntries={provisionalEntries}
               qaMarkdown={noteMarkdown}
+              question={question}
               tab={secondaryPanelTab}
               transcriptEntries={transcriptEntries}
             />
@@ -998,11 +998,18 @@ export function MeetingBuddyApp({
 
       {activeDrawer === "session" ? (
         <SessionDrawer
+          askHint={askHint}
+          canAsk={canAsk}
+          currentAnswer={currentAnswer}
+          isAsking={isAsking}
           onClose={() => setActiveDrawer(null)}
+          onQuestionChange={setQuestion}
+          onSendQuestion={sendQuestion}
           onTabChange={setSecondaryPanelTab}
           partialTranscript={partialTranscript}
           provisionalEntries={provisionalEntries}
           qaMarkdown={noteMarkdown}
+          question={question}
           tab={secondaryPanelTab}
           transcriptEntries={transcriptEntries}
         />

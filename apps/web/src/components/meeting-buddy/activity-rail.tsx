@@ -11,12 +11,19 @@ import { cx } from "@/components/meeting-buddy/ui";
 type ActivityTab = "transcript" | "qa";
 
 type ActivityRailProps = {
+  askHint: string;
+  canAsk: boolean;
   className?: string;
+  currentAnswer: string;
+  isAsking: boolean;
+  onQuestionChange: (value: string) => void;
+  onSendQuestion: (explicit?: string) => void;
   tab: ActivityTab;
   onTabChange: (tab: ActivityTab) => void;
   partialTranscript: string;
   provisionalEntries: PendingTranscriptEntry[];
   qaMarkdown: string;
+  question: string;
   transcriptEntries: CommittedTranscriptEntry[];
 };
 
@@ -47,12 +54,19 @@ function TabButton({
 }
 
 export function ActivityRail({
+  askHint,
+  canAsk,
   className,
+  currentAnswer,
+  isAsking,
+  onQuestionChange,
+  onSendQuestion,
   tab,
   onTabChange,
   partialTranscript,
   provisionalEntries,
   qaMarkdown,
+  question,
   transcriptEntries,
 }: ActivityRailProps) {
   return (
@@ -73,15 +87,26 @@ export function ActivityRail({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-4">
+      <div className="min-h-0 flex-1 px-4 pb-5 pt-4">
         {tab === "transcript" ? (
-          <TranscriptPanel
-            partialTranscript={partialTranscript}
-            provisionalEntries={provisionalEntries}
-            transcriptEntries={transcriptEntries}
-          />
+          <div className="h-full overflow-y-auto">
+            <TranscriptPanel
+              partialTranscript={partialTranscript}
+              provisionalEntries={provisionalEntries}
+              transcriptEntries={transcriptEntries}
+            />
+          </div>
         ) : (
-          <BuddyQaPanel qaMarkdown={qaMarkdown} />
+          <BuddyQaPanel
+            askHint={askHint}
+            canAsk={canAsk}
+            currentAnswer={currentAnswer}
+            isAsking={isAsking}
+            onQuestionChange={onQuestionChange}
+            onSendQuestion={onSendQuestion}
+            qaMarkdown={qaMarkdown}
+            question={question}
+          />
         )}
       </div>
     </section>
