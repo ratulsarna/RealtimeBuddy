@@ -1040,7 +1040,6 @@ export function MeetingBuddyApp({
                 canStart={canStart}
                 meetingSeed={meetingSeed}
                 onMeetingSeedChange={setMeetingSeed}
-                onOpenAdvanced={() => setSidebarOpen(true)}
                 onStartSession={startSession}
               />
             </div>
