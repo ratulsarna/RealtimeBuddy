@@ -29,9 +29,11 @@ type SessionSidebarProps = {
   canJoin: boolean;
   canPause: boolean;
   canResume: boolean;
+  canSaveStandingContext: boolean;
   canStart: boolean;
   canStop: boolean;
   includeTabAudio: boolean;
+  isSavingStandingContext: boolean;
   languagePreference: SessionLanguagePreference;
   microphones: AudioInputDevice[];
   onClose?: () => void;
@@ -41,6 +43,7 @@ type SessionSidebarProps = {
   onLanguageChange: (value: SessionLanguagePreference) => void;
   onPauseSession: () => void;
   onResumeSession: () => void;
+  onSaveStandingContext: () => void;
   onSelectedMicChange: (value: string) => void;
   onSessionIdInputChange: (value: string) => void;
   onStartSession: () => void;
@@ -67,9 +70,11 @@ export function SessionSidebar({
   canJoin,
   canPause,
   canResume,
+  canSaveStandingContext,
   canStart,
   canStop,
   includeTabAudio,
+  isSavingStandingContext,
   languagePreference,
   microphones,
   onClose,
@@ -79,6 +84,7 @@ export function SessionSidebar({
   onLanguageChange,
   onPauseSession,
   onResumeSession,
+  onSaveStandingContext,
   onSelectedMicChange,
   onSessionIdInputChange,
   onStartSession,
@@ -216,6 +222,17 @@ export function SessionSidebar({
               Durable context that usually stays true meeting to meeting.
             </p>
           </label>
+
+          <div className="flex justify-end">
+            <ActionButton
+              disabled={!canSaveStandingContext}
+              onClick={onSaveStandingContext}
+              size="sm"
+              type="button"
+            >
+              {isSavingStandingContext ? "Saving..." : "Save standing context"}
+            </ActionButton>
+          </div>
         </div>
 
         {/* ── Actions ── */}

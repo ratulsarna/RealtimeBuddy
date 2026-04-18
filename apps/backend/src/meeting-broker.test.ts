@@ -121,6 +121,10 @@ function flushAsyncWork() {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+async function readEmptyConfig() {
+  return {};
+}
+
 function parseSentEvents(socket: MockSocket) {
   return socket.sent.map((payload) => JSON.parse(payload) as ServerEvent);
 }
@@ -139,7 +143,7 @@ test("MeetingBroker routes capture controls to the active capture client session
     const session = createMockSession();
     createdSessions.push(session);
     return session;
-  });
+  }, readEmptyConfig);
   const socket = new MockSocket();
 
   broker.attach(socket as never);
@@ -202,7 +206,7 @@ test("MeetingBroker forwards optional Buddy seed layers when starting a session"
   const broker = new MeetingBroker((options) => {
     receivedOptions = options;
     return createMockSession();
-  });
+  }, readEmptyConfig);
   const socket = new MockSocket();
 
   broker.attach(socket as never);
@@ -228,7 +232,7 @@ test("MeetingBroker forwards optional Buddy seed layers when starting a session"
 
 test("MeetingBroker keeps a session alive when the capture socket closes but a companion remains", async () => {
   const session = createMockSession();
-  const broker = new MeetingBroker(() => session);
+  const broker = new MeetingBroker(() => session, readEmptyConfig);
   const captureSocket = new MockSocket();
   const companionSocket = new MockSocket();
 
@@ -282,7 +286,7 @@ test("MeetingBroker resumes a paused session when a new capture client reattache
       this.snapshot.captureState = "live";
     },
   });
-  const broker = new MeetingBroker(() => session);
+  const broker = new MeetingBroker(() => session, readEmptyConfig);
   const firstCaptureSocket = new MockSocket();
   const companionSocket = new MockSocket();
   const replacementCaptureSocket = new MockSocket();
@@ -343,7 +347,7 @@ test("MeetingBroker resumes a paused session when a new capture client reattache
 
 test("MeetingBroker stops the session when the last attached socket closes", async () => {
   const session = createMockSession();
-  const broker = new MeetingBroker(() => session);
+  const broker = new MeetingBroker(() => session, readEmptyConfig);
   const captureSocket = new MockSocket();
 
   broker.attach(captureSocket as never);
@@ -393,7 +397,7 @@ test("MeetingBroker serializes pause and resume on the same socket", async () =>
       ask: async () => undefined,
       stop: async () => undefined,
     })
-  );
+  , readEmptyConfig);
   const socket = new MockSocket();
 
   broker.attach(socket as never);
@@ -452,7 +456,7 @@ test("MeetingBroker stops immediately when the last socket closes during in-flig
         callOrder.push("stop");
       },
     })
-  );
+  , readEmptyConfig);
   const socket = new MockSocket();
 
   broker.attach(socket as never);
@@ -518,7 +522,7 @@ test("MeetingBroker keeps live audio flowing while an ask is in flight", async (
       },
       stop: async () => undefined,
     })
-  );
+  , readEmptyConfig);
   const socket = new MockSocket();
 
   broker.attach(socket as never);
@@ -577,7 +581,7 @@ test("MeetingBroker forwards the selected language preference into session creat
         languagePreference: options.languagePreference,
       }),
     });
-  });
+  }, readEmptyConfig);
   const socket = new MockSocket();
 
   broker.attach(socket as never);
@@ -607,7 +611,7 @@ test("MeetingBroker sends a snapshot when a companion joins an existing session"
         partialTranscript: "still talking",
     }),
   });
-  const broker = new MeetingBroker(() => session);
+  const broker = new MeetingBroker(() => session, readEmptyConfig);
   const captureSocket = new MockSocket();
   const companionSocket = new MockSocket();
 
@@ -655,7 +659,7 @@ test("MeetingBroker sends a snapshot when a companion joins an existing session"
 
 test("MeetingBroker refreshes participant counts for existing peers when a companion joins", async () => {
   const session = createMockSession();
-  const broker = new MeetingBroker(() => session);
+  const broker = new MeetingBroker(() => session, readEmptyConfig);
   const captureSocket = new MockSocket();
   const companionSocket = new MockSocket();
 
@@ -705,7 +709,7 @@ test("MeetingBroker refreshes participant counts for existing peers when a compa
 
 test("MeetingBroker rejects capture-only actions from companion sockets", async () => {
   const session = createMockSession();
-  const broker = new MeetingBroker(() => session);
+  const broker = new MeetingBroker(() => session, readEmptyConfig);
   const captureSocket = new MockSocket();
   const companionSocket = new MockSocket();
 
@@ -750,7 +754,7 @@ test("MeetingBroker rejects capture-only actions from companion sockets", async 
 
 test("MeetingBroker rejects stop_session from companion sockets", async () => {
   const session = createMockSession();
-  const broker = new MeetingBroker(() => session);
+  const broker = new MeetingBroker(() => session, readEmptyConfig);
   const captureSocket = new MockSocket();
   const companionSocket = new MockSocket();
 
@@ -801,7 +805,7 @@ test("MeetingBroker marks late companion snapshots as paused when no capture cli
       statusMessage: "Listening live.",
     }),
   });
-  const broker = new MeetingBroker(() => session);
+  const broker = new MeetingBroker(() => session, readEmptyConfig);
   const captureSocket = new MockSocket();
   const firstCompanionSocket = new MockSocket();
   const lateCompanionSocket = new MockSocket();

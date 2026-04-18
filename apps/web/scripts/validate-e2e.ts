@@ -22,8 +22,7 @@ const backendAppDir = path.join(repoRoot, "apps", "backend");
 type ValidationEnv = {
   appUrl: string;
   fakeAudioPath: string;
-  vaultPath: string;
-  codexVaultPath: string;
+  buddyBasePath: string;
   backendOutputPath: string;
 };
 
@@ -72,31 +71,31 @@ async function runSingleClientValidation(browser: Browser, env: ValidationEnv) {
   await openApp(page, env.appUrl);
   await configureSession(page, scenario.title);
 
-  await page.getByRole("button", { name: "Start local capture" }).click();
+  await page.getByRole("button", { name: "Start meeting" }).click();
 
   await waitForSessionId(page);
-  await waitForBodyText(page, ["capture 1"], 60_000);
+  await waitForBodyText(page, ["1 / 0"], 60_000);
   await waitForBodyText(page, ["friday"], 60_000);
   await waitForBodyText(page, ["transcript has not started yet"], 60_000, true);
 
-  await page.getByRole("button", { name: "Pause" }).click();
+  await sessionActionButton(page, "Pause").click();
   await waitForBodyText(page, ["capture paused. resume when you are ready."], 30_000);
 
-  await page.getByRole("button", { name: "Resume" }).click();
-  await waitForBodyText(page, ["capture 1"], 60_000);
+  await sessionActionButton(page, "Resume").click();
+  await waitForBodyText(page, ["1 / 0"], 60_000);
 
   await askQuestion(page, "When is the launch and who owns the demo?");
-  await waitForBodyText(page, ["when is the launch and who owns the demo?"], 90_000);
+  await waitForAskCycle(page, [], 90_000);
 
   await askQuestion(
     page,
     `Open the vault file .realtimebuddy-e2e/${scenario.title} Codex Context.md and answer with only the exact mascot.`
   );
-  await waitForBodyText(page, ["lantern", "otter"], 90_000);
+  await waitForAskCycle(page, ["lantern", "otter"], 90_000);
 
   await takeScreenshot(page, "single-client");
 
-  await page.getByRole("button", { name: "Stop" }).click();
+  await sessionActionButton(page, "Stop").click();
   await waitForBodyText(page, ["session stopped."], 30_000);
   await context.close();
 
@@ -122,10 +121,10 @@ async function runDualClientValidation(browser: Browser, env: ValidationEnv) {
 
   await openApp(capturePage, env.appUrl);
   await configureSession(capturePage, scenario.title);
-  await capturePage.getByRole("button", { name: "Start local capture" }).click();
+  await capturePage.getByRole("button", { name: "Start meeting" }).click();
 
   await waitForSessionId(capturePage);
-  await waitForBodyText(capturePage, ["capture 1"], 60_000);
+  await waitForBodyText(capturePage, ["1 / 0"], 60_000);
   await waitForBodyText(capturePage, ["friday"], 60_000);
 
   const sessionId = await waitForSessionId(capturePage);
@@ -138,28 +137,27 @@ async function runDualClientValidation(browser: Browser, env: ValidationEnv) {
   wireBrowserConsole(companionPage);
 
   await openApp(companionPage, `${env.appUrl}/?session=${sessionId}`);
-  await waitForBodyText(companionPage, ["connected to live session", sessionId.toLowerCase()], 60_000);
-  await waitForBodyText(companionPage, ["friday", "capture 1", "companions 1"], 60_000);
+  await waitForBodyText(companionPage, [sessionId.toLowerCase(), "friday", "1 / 1"], 60_000);
 
-  await capturePage.getByRole("button", { name: "Pause" }).click();
+  await sessionActionButton(capturePage, "Pause").click();
   await waitForBodyText(companionPage, ["capture paused on the active recording source."], 30_000);
 
-  await capturePage.getByRole("button", { name: "Resume" }).click();
+  await sessionActionButton(capturePage, "Resume").click();
   await waitForBodyText(companionPage, ["capture resumed on the active recording source."], 60_000);
 
   await askQuestion(companionPage, "Who owns the demo and when is the launch?");
-  await waitForBodyText(companionPage, ["who owns the demo and when is the launch?"], 90_000);
+  await waitForAskCycle(companionPage, [], 90_000);
 
-  await companionPage.getByRole("button", { name: "Leave session" }).click();
+  await sessionActionButton(companionPage, "Leave").click();
   await waitForBodyText(companionPage, ["disconnected from the live session."], 30_000);
-  await waitForBodyText(capturePage, ["companions 0"], 60_000);
+  await waitForBodyText(capturePage, ["1 / 0"], 60_000);
 
   await openApp(companionPage, `${env.appUrl}/?session=${sessionId}`);
-  await waitForBodyText(companionPage, ["companions 1", "capture 1"], 60_000);
+  await waitForBodyText(companionPage, ["1 / 1"], 60_000);
 
   await takeScreenshot(companionPage, "dual-client");
 
-  await capturePage.getByRole("button", { name: "Stop" }).click();
+  await sessionActionButton(capturePage, "Stop").click();
   await waitForBodyText(companionPage, ["session stopped."], 30_000);
 
   await companionContext.close();
@@ -179,7 +177,7 @@ function createScenario(env: ValidationEnv, label: string): ValidationScenario {
   return {
     title,
     fixturePath: path.join(
-      env.codexVaultPath,
+      env.buddyBasePath,
       ".realtimebuddy-e2e",
       `${title} Codex Context.md`
     ),
@@ -189,17 +187,26 @@ function createScenario(env: ValidationEnv, label: string): ValidationScenario {
 async function configureSession(page: Page, title: string) {
   await page.getByLabel("Session Title").fill(title);
   await page.getByLabel("Language").selectOption("english");
-
-  const tabAudioCheckbox = page.getByRole("checkbox", { name: "Try tab audio too" });
-  if (await tabAudioCheckbox.isChecked()) {
-    await tabAudioCheckbox.uncheck();
-  }
 }
 
 async function askQuestion(page: Page, question: string) {
-  const input = page.getByPlaceholder("What did we decide about launch timing?");
+  const input = page.getByLabel("Ask Buddy a question");
   await input.fill(question);
-  await page.getByRole("button", { name: "Ask buddy" }).click();
+  await page.getByRole("button", { name: "Ask" }).click();
+}
+
+function sessionActionButton(page: Page, name: string) {
+  return page.locator("header").getByRole("button", { name });
+}
+
+async function waitForAskCycle(page: Page, patterns: string[], timeout: number) {
+  if (patterns.length > 0) {
+    await waitForBodyText(page, patterns, timeout);
+  }
+  await page.waitForFunction(() => {
+    const buttons = Array.from(document.querySelectorAll("button"));
+    return !buttons.some((button) => button.textContent?.trim() === "Asking...");
+  }, undefined, { timeout });
 }
 
 async function openApp(page: Page, targetUrl: string) {
@@ -291,7 +298,7 @@ async function waitForExpectedNote(
 
 async function readLatestNote(env: ValidationEnv, title: string) {
   const today = new Date().toISOString().slice(0, 10);
-  const noteDir = path.join(env.vaultPath, "Notes", "Dated", today);
+  const noteDir = path.join(env.buddyBasePath, "Notes", "Dated", today);
   const entries = await readdir(noteDir, { withFileTypes: true });
   const matching = entries
     .filter((entry) => entry.isFile() && entry.name.startsWith(title))
@@ -348,6 +355,7 @@ function hasExpectedLanguageConfig(log: string) {
 
 async function ensureFakeAudioFixture(fakeAudioPath: string) {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "realtimebuddy-e2e-audio-"));
+  let speechSynthesisMode: "ffmpeg-flite" | "macos-say" | null = null;
 
   try {
     await mkdir(path.dirname(fakeAudioPath), { recursive: true });
@@ -388,21 +396,12 @@ async function ensureFakeAudioFixture(fakeAudioPath: string) {
       segmentPaths.push(segmentPath);
 
       if (spec.kind === "speech") {
-        await runCommand("ffmpeg", [
-          "-hide_banner",
-          "-loglevel",
-          "error",
-          "-y",
-          "-f",
-          "lavfi",
-          "-i",
-          `flite=text='${escapeFliteText(spec.text)}':voice=slt`,
-          "-ar",
-          "16000",
-          "-ac",
-          "1",
+        speechSynthesisMode = await synthesizeSpeechSegment({
           segmentPath,
-        ]);
+          tempDir,
+          text: spec.text,
+          mode: speechSynthesisMode,
+        });
       } else {
         await runCommand("ffmpeg", [
           "-hide_banner",
@@ -453,6 +452,92 @@ async function ensureFakeAudioFixture(fakeAudioPath: string) {
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+}
+
+async function synthesizeSpeechSegment(options: {
+  segmentPath: string;
+  tempDir: string;
+  text: string;
+  mode: "ffmpeg-flite" | "macos-say" | null;
+}) {
+  if (options.mode === "ffmpeg-flite") {
+    await synthesizeSpeechWithFlite(options.text, options.segmentPath);
+    return "ffmpeg-flite" as const;
+  }
+
+  if (options.mode === "macos-say") {
+    await synthesizeSpeechWithMacSay(options.text, options.segmentPath, options.tempDir);
+    return "macos-say" as const;
+  }
+
+  try {
+    await synthesizeSpeechWithFlite(options.text, options.segmentPath);
+    return "ffmpeg-flite" as const;
+  } catch (fliteError) {
+    try {
+      await synthesizeSpeechWithMacSay(options.text, options.segmentPath, options.tempDir);
+      return "macos-say" as const;
+    } catch (sayError) {
+      throw new Error(
+        [
+          "Could not synthesize the E2E speech fixture.",
+          `ffmpeg/flite failed: ${String(fliteError)}`,
+          `macOS say failed: ${String(sayError)}`,
+        ].join(" ")
+      );
+    }
+  }
+}
+
+async function synthesizeSpeechWithFlite(text: string, outputPath: string) {
+  await runCommand("ffmpeg", [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    `flite=text='${escapeFliteText(text)}':voice=slt`,
+    "-ar",
+    "16000",
+    "-ac",
+    "1",
+    outputPath,
+  ]);
+}
+
+async function synthesizeSpeechWithMacSay(
+  text: string,
+  outputPath: string,
+  tempDir: string
+) {
+  const aiffPath = path.join(
+    tempDir,
+    `${path.basename(outputPath, path.extname(outputPath))}.aiff`
+  );
+
+  await runCommand("say", [
+    "-v",
+    "Samantha",
+    "-o",
+    aiffPath,
+    text,
+  ]);
+
+  await runCommand("ffmpeg", [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-y",
+    "-i",
+    aiffPath,
+    "-ar",
+    "16000",
+    "-ac",
+    "1",
+    outputPath,
+  ]);
 }
 
 function escapeFliteText(text: string) {
@@ -551,10 +636,9 @@ function resolveValidationEnv(): ValidationEnv {
   const appUrl = process.env.APP_URL ?? "http://localhost:3000";
   const fakeAudioPath =
     process.env.FAKE_AUDIO_PATH ?? path.join(os.tmpdir(), "realtimebuddy-e2e.wav");
-  const vaultPath = expandHome(
-    process.env.OBSIDIAN_VAULT_PATH ?? path.join(os.homedir(), "ObsidianVault")
+  const buddyBasePath = expandHome(
+    process.env.REALTIMEBUDDY_BASE_PATH ?? path.join(os.homedir(), ".realtimebuddy")
   );
-  const codexVaultPath = expandHome(process.env.CODEX_VAULT_PATH ?? vaultPath);
   const backendOutputPath = expandHome(
     process.env.BACKEND_OUTPUT_PATH ?? path.join(backendAppDir, "output", "session-logs")
   );
@@ -562,8 +646,7 @@ function resolveValidationEnv(): ValidationEnv {
   return {
     appUrl,
     fakeAudioPath,
-    vaultPath,
-    codexVaultPath,
+    buddyBasePath,
     backendOutputPath,
   };
 }

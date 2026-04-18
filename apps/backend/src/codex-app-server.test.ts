@@ -7,7 +7,7 @@ import {
   buildQuestionPrompt,
   buildThreadStartParams,
 } from "./codex-app-server";
-import { resolveConfiguredPath } from "./meeting-session";
+import { resolveConfiguredPath } from "./persistent-config";
 
 test("buildThreadStartParams anchors the Codex thread in the vault cwd", async () => {
   const params = await buildThreadStartParams({

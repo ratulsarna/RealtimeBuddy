@@ -1,5 +1,4 @@
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,6 +17,10 @@ import {
 import { CodexAppServer } from "./codex-app-server";
 import { ElevenLabsBridge } from "./elevenlabs-bridge";
 import { buildMeetingNote } from "./note-builder";
+import {
+  readConfiguredBasePathEnv,
+  resolveRealtimeBuddyBasePath,
+} from "./persistent-config";
 
 type AudioChunk = {
   pcmBase64: string;
@@ -80,33 +83,11 @@ export type MeetingSessionSnapshot = {
   statusMessage: string;
 };
 
-const DEFAULT_VAULT_PATH = path.join(homedir(), "ObsidianVault");
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_APP_DIR = path.resolve(SERVER_DIR, "..");
 const MAX_BUFFERED_AUDIO_CHUNKS = 240;
-const DEFAULT_STATIC_USER_SEED = process.env.BUDDY_STATIC_USER_SEED?.trim() ?? "";
 const BUDDY_TRANSCRIPT_BATCH_WINDOW_MS = 1_500;
 const BUDDY_RECENT_SURFACE_WINDOW_MS = 15_000;
-
-export function resolveConfiguredPath(
-  configuredPath: string | undefined,
-  fallbackPath: string
-) {
-  const trimmedPath = configuredPath?.trim();
-  if (!trimmedPath) {
-    return fallbackPath;
-  }
-
-  if (trimmedPath === "~") {
-    return homedir();
-  }
-
-  if (trimmedPath.startsWith("~/") || trimmedPath.startsWith("~\\")) {
-    return path.join(homedir(), trimmedPath.slice(2));
-  }
-
-  return trimmedPath;
-}
 
 export class MeetingSession {
   readonly id = crypto.randomUUID();
@@ -124,10 +105,7 @@ export class MeetingSession {
   private readonly questionAnswers: QuestionAnswer[] = [];
   private readonly startedAt = new Date();
   private lastStatusMessage = "Preparing session...";
-  private readonly vaultPath = resolveConfiguredPath(
-    process.env.CODEX_VAULT_PATH,
-    DEFAULT_VAULT_PATH
-  );
+  private readonly basePath = resolveRealtimeBuddyBasePath(readConfiguredBasePathEnv());
   private readonly notePath: string;
   private readonly notePathRelative: string;
   private readonly logPath: string;
@@ -168,16 +146,16 @@ export class MeetingSession {
     this.includeTabAudio = options.includeTabAudio;
     this.languagePreference = options.languagePreference;
     this.languageCode = resolveRealtimeLanguageCode(this.languagePreference);
-    this.staticUserSeed = this.normalizeSeed(options.staticUserSeed, DEFAULT_STATIC_USER_SEED);
+    this.staticUserSeed = this.normalizeSeed(options.staticUserSeed);
     this.meetingSeed = this.normalizeSeed(options.meetingSeed);
     this.sendEvent = options.sendEvent;
     const safeFileTitle = this.sanitizeTitleForFileName(this.title);
-    this.codexWorkingDirectory = this.vaultPath;
+    this.codexWorkingDirectory = this.basePath;
 
-    const noteFolder = path.join(this.vaultPath, "Notes", "Dated", this.dateStamp(this.startedAt));
+    const noteFolder = path.join(this.basePath, "Notes", "Dated", this.dateStamp(this.startedAt));
     const noteFileName = `${safeFileTitle} - ${this.fileStamp(this.startedAt)}.md`;
     this.notePath = path.join(noteFolder, noteFileName);
-    this.notePathRelative = path.relative(this.vaultPath, this.notePath);
+    this.notePathRelative = path.relative(this.basePath, this.notePath);
 
     const logFolder = path.join(BACKEND_APP_DIR, "output", "session-logs", this.dateStamp(this.startedAt));
     const logFileName = `${safeFileTitle} - ${this.fileStamp(this.startedAt)}.jsonl`;

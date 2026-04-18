@@ -8,6 +8,7 @@ import {
 import type WebSocket from "ws";
 
 import { MeetingSession } from "./meeting-session";
+import { readPersistentConfig } from "./persistent-config";
 
 type MeetingSessionLike = Pick<
   MeetingSession,
@@ -45,7 +46,8 @@ export class MeetingBroker {
 
   constructor(
     private readonly createSession: (options: ConstructorParameters<typeof MeetingSession>[0]) => MeetingSessionLike =
-      (options) => new MeetingSession(options)
+      (options) => new MeetingSession(options),
+    private readonly loadPersistentConfig: typeof readPersistentConfig = readPersistentConfig
   ) {}
 
   attach(socket: WebSocket) {
@@ -228,7 +230,7 @@ export class MeetingBroker {
       return;
     }
 
-    const hostedSession = this.createHostedSession(message);
+    const hostedSession = await this.createHostedSession(message);
     this.attachSocket(hostedSession, socket, state, "capture");
     try {
       await hostedSession.session.start();
@@ -272,9 +274,16 @@ export class MeetingBroker {
     this.broadcastSessionSnapshot(hostedSession);
   }
 
-  private createHostedSession(
+  private async createHostedSession(
     message: Extract<ClientEvent, { type: "start_session" }>
   ) {
+    const persistedConfig = await this.loadPersistentConfig();
+    const staticUserSeed =
+      message.staticUserSeed?.trim() ||
+      persistedConfig.staticUserSeed ||
+      process.env.BUDDY_STATIC_USER_SEED?.trim() ||
+      undefined;
+
     const hostedSession = {
       session: null as unknown as MeetingSessionLike,
       sockets: new Set<WebSocket>(),
@@ -289,7 +298,7 @@ export class MeetingBroker {
       title: message.title,
       includeTabAudio: message.includeTabAudio,
       languagePreference: message.languagePreference,
-      staticUserSeed: message.staticUserSeed,
+      staticUserSeed,
       meetingSeed: message.meetingSeed,
       sendEvent: (event) => {
         this.broadcast(hostedSession, event);

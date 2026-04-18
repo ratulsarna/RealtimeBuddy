@@ -29,10 +29,10 @@ Success condition:
 
 ## Demo storage model
 
-For the hackathon demo, `CODEX_VAULT_PATH` is the single source of truth.
+For the hackathon demo, `REALTIMEBUDDY_BASE_PATH` is the single source of truth.
 
-- Codex context reads from `CODEX_VAULT_PATH`
-- meeting notes are written under `CODEX_VAULT_PATH/Notes/`
+- Codex context reads from `REALTIMEBUDDY_BASE_PATH`
+- meeting notes are written under `REALTIMEBUDDY_BASE_PATH/Notes/`
 - the persisted note artifact is Buddy Q&A only, not a transcript-heavy meeting dump
 
 ## Build order

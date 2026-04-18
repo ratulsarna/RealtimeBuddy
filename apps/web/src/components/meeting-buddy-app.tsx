@@ -39,6 +39,7 @@ import { type BuddyEvent, type ServerEvent } from "@realtimebuddy/shared/protoco
 
 type MeetingBuddyAppProps = {
   backendBaseUrl?: string;
+  initialStaticUserSeed?: string;
 };
 
 function dedupeBuddyEventsById(events: BuddyEvent[]): BuddyEvent[] {
@@ -54,6 +55,7 @@ function dedupeBuddyEventsById(events: BuddyEvent[]): BuddyEvent[] {
 
 export function MeetingBuddyApp({
   backendBaseUrl = "",
+  initialStaticUserSeed = "",
 }: MeetingBuddyAppProps) {
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [sessionMode, setSessionMode] = useState<SessionMode>(null);
@@ -62,7 +64,7 @@ export function MeetingBuddyApp({
   const [includeTabAudio, setIncludeTabAudio] = useState(false);
   const [languagePreference, setLanguagePreference] = useState<SessionLanguagePreference>("auto");
   const [title, setTitle] = useState("Meeting Buddy");
-  const [staticUserSeed, setStaticUserSeed] = useState("");
+  const [staticUserSeed, setStaticUserSeed] = useState(initialStaticUserSeed);
   const [meetingSeed, setMeetingSeed] = useState("");
   const [question, setQuestion] = useState("");
   const [microphones, setMicrophones] = useState<AudioInputDevice[]>([]);
@@ -82,6 +84,7 @@ export function MeetingBuddyApp({
   const [captureClientCount, setCaptureClientCount] = useState(0);
   const [companionClientCount, setCompanionClientCount] = useState(0);
   const [isAsking, setIsAsking] = useState(false);
+  const [isSavingStandingContext, setIsSavingStandingContext] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const socketRef = useRef<WebSocket | null>(null);
@@ -113,6 +116,10 @@ export function MeetingBuddyApp({
   useEffect(() => {
     connectionStateRef.current = connectionState;
   }, [connectionState]);
+
+  useEffect(() => {
+    setStaticUserSeed(initialStaticUserSeed);
+  }, [initialStaticUserSeed]);
 
   // Close drawer on Escape
   useEffect(() => {
@@ -573,6 +580,44 @@ export function MeetingBuddyApp({
     }
   };
 
+  const saveStandingContext = async () => {
+    setIsSavingStandingContext(true);
+
+    try {
+      const response = await fetch("/api/buddy-config", {
+        body: JSON.stringify({
+          staticUserSeed,
+        }),
+        headers: {
+          "content-type": "application/json",
+        },
+        method: "PUT",
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as {
+          message?: string;
+        } | null;
+        throw new Error(payload?.message ?? "Could not save standing context.");
+      }
+
+      const savedConfig = (await response.json()) as {
+        staticUserSeed?: string;
+      };
+      setStaticUserSeed(savedConfig.staticUserSeed ?? "");
+
+      setStatusMessage(
+        (savedConfig.staticUserSeed ?? "").trim()
+          ? "Standing context saved."
+          : "Standing context cleared."
+      );
+    } catch (error) {
+      setStatusMessage(String(error));
+    } finally {
+      setIsSavingStandingContext(false);
+    }
+  };
+
   const handleServerEvent = (event: ServerEvent) => {
     if (event.type === "session_ready") {
       captureIntentRef.current = "idle";
@@ -814,6 +859,7 @@ export function MeetingBuddyApp({
   const canJoin = connectionState === "idle" && Boolean(sessionIdInput.trim());
   const canPause = sessionMode === "local_capture" && connectionState === "live";
   const canResume = sessionMode === "local_capture" && connectionState === "paused";
+  const canSaveStandingContext = canStart && !isSavingStandingContext;
   const canStop = connectionState !== "idle";
   const canAsk =
     Boolean(socketRef.current) &&
@@ -879,9 +925,11 @@ export function MeetingBuddyApp({
     canJoin,
     canPause,
     canResume,
+    canSaveStandingContext,
     canStart,
     canStop,
     includeTabAudio,
+    isSavingStandingContext,
     languagePreference,
     microphones,
     onCopySessionId: () => { void copySessionId(); },
@@ -890,6 +938,7 @@ export function MeetingBuddyApp({
     onLanguageChange: setLanguagePreference,
     onPauseSession: pauseSession,
     onResumeSession: resumeSession,
+    onSaveStandingContext: () => { void saveStandingContext(); },
     onSelectedMicChange: setSelectedMicId,
     onSessionIdInputChange: setSessionIdInput,
     onStartSession: startSession,
