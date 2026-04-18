@@ -13,6 +13,12 @@ surfaces short in-the-moment nudges while also staying available for direct Q&A.
 - supports direct Buddy Q&A during the meeting
 - persists standing context and stores notes locally
 
+## Why Realtime Works
+
+The Buddy loop depends on low-latency model turns. In the current setup, RealtimeBuddy uses
+`gpt-5.3-codex-spark` by default for the Codex app-server session, which keeps the transcript-fed
+Buddy turns fast enough to be useful during a live meeting instead of only after the fact.
+
 ## Running Locally
 
 - Node.js with `pnpm`
