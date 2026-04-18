@@ -419,6 +419,7 @@ export class MeetingBroker {
       partialTranscript: snapshot.partialTranscript,
       provisionalEntries: snapshot.provisionalEntries,
       transcriptEntries: snapshot.transcriptEntries,
+      buddyEvents: snapshot.buddyEvents,
       questionAnswers: snapshot.questionAnswers,
       markdown: snapshot.markdown,
       captureState,

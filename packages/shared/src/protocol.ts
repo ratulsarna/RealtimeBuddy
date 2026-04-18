@@ -2,6 +2,21 @@ import type { SessionLanguagePreference } from "./language-preferences";
 
 export type SessionRole = "capture" | "companion";
 export type SessionCaptureState = "live" | "paused" | "stopped";
+export type BuddyEventType =
+  | "ask_this"
+  | "cover_this"
+  | "needs_owner"
+  | "important_signal";
+
+export type BuddyEvent = {
+  id: string;
+  type: BuddyEventType;
+  title: string;
+  body: string;
+  suggestedQuestion: string | null;
+  createdAt: string;
+  source: "transcript";
+};
 
 export type ClientEvent =
   | {
@@ -91,6 +106,7 @@ export type ServerEvent =
         text: string;
         committedAt: string;
       }>;
+      buddyEvents: BuddyEvent[];
       questionAnswers: Array<{
         question: string;
         answer: string;
@@ -129,6 +145,10 @@ export type ServerEvent =
   | {
       type: "notes_updated";
       markdown: string;
+    }
+  | {
+      type: "buddy_event";
+      event: BuddyEvent;
     }
   | {
       type: "session_paused";

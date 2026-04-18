@@ -63,6 +63,7 @@ function createMockSnapshot(overrides: Partial<MeetingSessionSnapshot> = {}): Me
     partialTranscript: "",
     provisionalEntries: [],
     transcriptEntries: [],
+    buddyEvents: [],
     questionAnswers: [],
     markdown: "# Mock",
     captureState: "live",

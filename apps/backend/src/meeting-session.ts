@@ -4,7 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { resolveRealtimeLanguageCode, type SessionLanguagePreference } from "@realtimebuddy/shared/language-preferences";
-import type { ServerEvent, SessionCaptureState } from "@realtimebuddy/shared/protocol";
+import type {
+  BuddyEvent,
+  ServerEvent,
+  SessionCaptureState,
+} from "@realtimebuddy/shared/protocol";
 
 import {
   buildBuddyDeveloperInstructions,
@@ -54,6 +58,8 @@ type BuddyResponseFailure = {
   stage: "json_parse" | "schema_validation";
 };
 
+type SurfacedBuddyEvent = BuddyEvent;
+
 export type MeetingSessionSnapshot = {
   sessionId: string;
   title: string;
@@ -67,6 +73,7 @@ export type MeetingSessionSnapshot = {
   partialTranscript: string;
   provisionalEntries: ProvisionalSegment[];
   transcriptEntries: TranscriptSegment[];
+  buddyEvents: SurfacedBuddyEvent[];
   questionAnswers: QuestionAnswer[];
   markdown: string;
   captureState: SessionCaptureState;
@@ -78,6 +85,8 @@ const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_APP_DIR = path.resolve(SERVER_DIR, "..");
 const MAX_BUFFERED_AUDIO_CHUNKS = 240;
 const DEFAULT_STATIC_USER_SEED = process.env.BUDDY_STATIC_USER_SEED?.trim() ?? "";
+const BUDDY_TRANSCRIPT_BATCH_WINDOW_MS = 1_500;
+const BUDDY_RECENT_SURFACE_WINDOW_MS = 15_000;
 
 export function resolveConfiguredPath(
   configuredPath: string | undefined,
@@ -111,6 +120,7 @@ export class MeetingSession {
   private readonly sendEvent: SendEvent;
   private readonly transcriptSegments: TranscriptSegment[] = [];
   private readonly provisionalSegments: ProvisionalSegment[] = [];
+  private readonly buddyEvents: SurfacedBuddyEvent[] = [];
   private readonly questionAnswers: QuestionAnswer[] = [];
   private readonly startedAt = new Date();
   private lastStatusMessage = "Preparing session...";
@@ -127,6 +137,7 @@ export class MeetingSession {
   private codex: CodexAppServer | null = null;
   private readonly audioQueue: AudioChunk[] = [];
   private readonly pendingCommitProvisionalIds: string[] = [];
+  private readonly pendingBuddyTranscriptSegments: TranscriptSegment[] = [];
 
   private elevenLabs: ElevenLabsBridge | null = null;
   private partialTranscript = "";
@@ -137,6 +148,8 @@ export class MeetingSession {
   private pausePromise: Promise<void> | null = null;
   private askQueue = Promise.resolve();
   private commitQueue = Promise.resolve();
+  private buddyTurnTimer: NodeJS.Timeout | null = null;
+  private buddyTurnLoopPromise: Promise<void> | null = null;
   private audioChunkCount = 0;
   private bridgeReady = false;
   private bridgeConnecting = false;
@@ -146,6 +159,8 @@ export class MeetingSession {
   private codexModel = "";
   private codexUnavailableMessage = "";
   private stopped = false;
+  private lastBuddySurfaceAt = 0;
+  private pendingAskCount = 0;
 
   constructor(options: MeetingSessionOptions) {
     this.sampleRate = options.sampleRate;
@@ -245,6 +260,7 @@ export class MeetingSession {
       partialTranscript: this.partialTranscript,
       provisionalEntries: this.provisionalSegments.map((segment) => ({ ...segment })),
       transcriptEntries: this.transcriptSegments.map((segment) => ({ ...segment })),
+      buddyEvents: this.buddyEvents.map((event) => ({ ...event })),
       questionAnswers: this.questionAnswers.map((entry) => ({ ...entry })),
       markdown: this.currentMarkdown(),
       captureState: this.captureState(),
@@ -301,6 +317,8 @@ export class MeetingSession {
   }
 
   ask(question: string) {
+    this.pendingAskCount += 1;
+    this.clearBuddyTurnTimer();
     const runAsk = this.askQueue.then(async () => {
       await this.commitTranscript();
       const model = await this.requireCodexReady();
@@ -349,6 +367,9 @@ export class MeetingSession {
       });
       this.emitEvent({ type: "answer_done", text: answer });
       this.emitEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
+    }).finally(() => {
+      this.pendingAskCount = Math.max(0, this.pendingAskCount - 1);
+      this.maybeScheduleBuddyTurnLoop();
     });
 
     this.askQueue = runAsk.catch(() => undefined);
@@ -499,6 +520,10 @@ export class MeetingSession {
       resolvedProvisionalId,
     });
     this.emitEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
+    this.enqueueBuddyTranscriptSegment({
+      text: committedText,
+      committedAt,
+    });
   }
 
   private flushQueuedAudio() {
@@ -849,18 +874,23 @@ export class MeetingSession {
       .slice(-24)
       .map((segment) => `- [${segment.committedAt}] ${segment.text}`)
       .join("\n");
-    const provisionalContext = this.provisionalSegments
-      .slice(-8)
-      .map((segment) => `- [pending ${segment.provisionalAt}] ${segment.text}`)
+    const buddyEventContext = this.buddyEvents
+      .slice(0, 4)
+      .map(
+        (event) =>
+          `- [${event.createdAt}] ${event.type}: ${event.title}${event.body ? ` — ${event.body}` : ""}`
+      )
       .join("\n");
 
     return [
       `Meeting title: ${this.title}`,
       `Meeting seed: ${this.meetingSeed || "None provided."}`,
       "",
-      "Recent transcript context:",
-      [transcriptContext, provisionalContext].filter(Boolean).join("\n") ||
-        "- No transcript context yet.",
+      "Recent committed transcript context:",
+      transcriptContext || "- No committed transcript yet.",
+      "",
+      "Recently surfaced Buddy cards:",
+      buddyEventContext || "- None yet.",
     ].join("\n");
   }
 
@@ -978,5 +1008,157 @@ export class MeetingSession {
 
   private sanitizeTitleForFileName(title: string) {
     return title.replace(/[<>:"/\\|?*\x00-\x1F]/g, "").trim() || "Meeting Buddy";
+  }
+
+  private enqueueBuddyTranscriptSegment(segment: TranscriptSegment) {
+    if (this.stopped || this.codexUnavailableMessage) {
+      return;
+    }
+
+    this.pendingBuddyTranscriptSegments.push(segment);
+    this.maybeScheduleBuddyTurnLoop();
+  }
+
+  private async runBuddyTranscriptLoop() {
+    if (this.buddyTurnLoopPromise) {
+      return await this.buddyTurnLoopPromise;
+    }
+
+    this.buddyTurnLoopPromise = (async () => {
+      while (
+        !this.stopped &&
+        !this.hasPendingAsk() &&
+        this.pendingBuddyTranscriptSegments.length > 0
+      ) {
+        const segments = this.pendingBuddyTranscriptSegments.splice(0);
+        try {
+          await this.processBuddyTranscriptSegments(segments);
+        } catch (error) {
+          await this.logEvent("buddy_transcript_turn_failed", {
+            segmentCount: segments.length,
+            message: String(error),
+          });
+        }
+
+        if (this.hasPendingAsk()) {
+          break;
+        }
+
+        if (this.pendingBuddyTranscriptSegments.length > 0) {
+          await this.sleep(BUDDY_TRANSCRIPT_BATCH_WINDOW_MS);
+        }
+      }
+    })().finally(() => {
+      this.buddyTurnLoopPromise = null;
+      this.maybeScheduleBuddyTurnLoop();
+    });
+
+    return await this.buddyTurnLoopPromise;
+  }
+
+  private async processBuddyTranscriptSegments(segments: TranscriptSegment[]) {
+    if (segments.length === 0 || this.stopped) {
+      return;
+    }
+
+    const trigger = this.buildBuddyTranscriptTrigger(segments);
+    await this.logEvent("buddy_transcript_turn_started", {
+      segmentCount: segments.length,
+      firstCommittedAt: segments[0]?.committedAt ?? "unknown",
+      lastCommittedAt: segments[segments.length - 1]?.committedAt ?? "unknown",
+      trigger: this.truncateForLog(trigger),
+    });
+
+    const { response, parseFailure } = await this.generateBuddyResponse(trigger);
+    if (parseFailure) {
+      return;
+    }
+
+    if (!response.shouldSurface || response.type === "noop" || this.stopped) {
+      await this.logEvent("buddy_transcript_turn_noop", {
+        segmentCount: segments.length,
+        firstCommittedAt: segments[0]?.committedAt ?? "unknown",
+        lastCommittedAt: segments[segments.length - 1]?.committedAt ?? "unknown",
+      });
+      return;
+    }
+
+    const createdAt = this.timeStamp(new Date());
+    const buddyEvent: SurfacedBuddyEvent = {
+      id: crypto.randomUUID(),
+      type: response.type,
+      title: response.title,
+      body: response.body,
+      suggestedQuestion: response.suggestedQuestion,
+      createdAt,
+      source: "transcript",
+    };
+
+    this.lastBuddySurfaceAt = Date.now();
+    this.buddyEvents.unshift(buddyEvent);
+    await this.logEvent("buddy_event_emitted", {
+      buddyEventId: buddyEvent.id,
+      responseType: buddyEvent.type,
+      title: this.truncateForLog(buddyEvent.title, 160),
+      body: this.truncateForLog(buddyEvent.body, 320),
+      segmentCount: segments.length,
+    });
+    this.emitEvent({
+      type: "buddy_event",
+      event: buddyEvent,
+    });
+  }
+
+  private buildBuddyTranscriptTrigger(segments: TranscriptSegment[]) {
+    const recentSurfaceAgeMs =
+      this.lastBuddySurfaceAt > 0 ? Date.now() - this.lastBuddySurfaceAt : null;
+    const recentSurfaceInstruction =
+      recentSurfaceAgeMs !== null && recentSurfaceAgeMs < BUDDY_RECENT_SURFACE_WINDOW_MS
+        ? `A Buddy card was already surfaced ${Math.max(1, Math.round(recentSurfaceAgeMs / 1000))} seconds ago. Stay extra conservative and only surface again if this new transcript creates a meaningfully new, timely intervention.`
+        : "If the new transcript is not newly actionable, return the required no-op JSON.";
+
+    return [
+      "New committed transcript arrived in the same live meeting thread.",
+      "Use this update to stay aware of the meeting without narrating it.",
+      recentSurfaceInstruction,
+      "",
+      `Committed transcript update (${segments.length} segment${segments.length === 1 ? "" : "s"}):`,
+      ...segments.map((segment) => `- [${segment.committedAt}] ${segment.text}`),
+    ].join("\n");
+  }
+
+  private async sleep(ms: number) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private hasPendingAsk() {
+    return this.pendingAskCount > 0;
+  }
+
+  private maybeScheduleBuddyTurnLoop(delayMs = BUDDY_TRANSCRIPT_BATCH_WINDOW_MS) {
+    if (
+      this.stopped ||
+      this.codexUnavailableMessage ||
+      this.hasPendingAsk() ||
+      this.pendingBuddyTranscriptSegments.length === 0 ||
+      this.buddyTurnLoopPromise ||
+      this.buddyTurnTimer
+    ) {
+      return;
+    }
+
+    this.buddyTurnTimer = setTimeout(() => {
+      this.buddyTurnTimer = null;
+      void this.runBuddyTranscriptLoop();
+    }, delayMs);
+  }
+
+  private clearBuddyTurnTimer() {
+    if (this.buddyTurnTimer === null) {
+      return;
+    }
+
+    clearTimeout(this.buddyTurnTimer);
+    this.buddyTurnTimer = null;
   }
 }
