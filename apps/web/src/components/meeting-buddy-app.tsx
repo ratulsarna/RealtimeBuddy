@@ -53,7 +53,7 @@ export function MeetingBuddyApp({
   backendBaseUrl = "",
   initialStaticUserSeed = "",
 }: MeetingBuddyAppProps) {
-  const [secondaryPanelTab, setSecondaryPanelTab] = useState<"transcript" | "note">("transcript");
+  const [secondaryPanelTab, setSecondaryPanelTab] = useState<"transcript" | "qa">("transcript");
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [sessionMode, setSessionMode] = useState<SessionMode>(null);
   const [sessionId, setSessionId] = useState("");
@@ -985,11 +985,10 @@ export function MeetingBuddyApp({
 
             <ActivityRail
               className="hidden h-full flex-shrink-0 lg:flex lg:w-[22rem] xl:w-[24rem]"
-              noteMarkdown={noteMarkdown}
-              notePathRelative={notePathRelative}
               onTabChange={setSecondaryPanelTab}
               partialTranscript={partialTranscript}
               provisionalEntries={provisionalEntries}
+              qaMarkdown={noteMarkdown}
               tab={secondaryPanelTab}
               transcriptEntries={transcriptEntries}
             />
@@ -999,12 +998,11 @@ export function MeetingBuddyApp({
 
       {activeDrawer === "session" ? (
         <SessionDrawer
-          noteMarkdown={noteMarkdown}
-          notePathRelative={notePathRelative}
           onClose={() => setActiveDrawer(null)}
           onTabChange={setSecondaryPanelTab}
           partialTranscript={partialTranscript}
           provisionalEntries={provisionalEntries}
+          qaMarkdown={noteMarkdown}
           tab={secondaryPanelTab}
           transcriptEntries={transcriptEntries}
         />

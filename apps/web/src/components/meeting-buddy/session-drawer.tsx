@@ -1,7 +1,7 @@
 "use client";
 
 import { DrawerShell } from "@/components/meeting-buddy/drawer-shell";
-import { NotePanel } from "@/components/meeting-buddy/note-panel";
+import { BuddyQaPanel } from "@/components/meeting-buddy/buddy-qa-panel";
 import { TranscriptPanel } from "@/components/meeting-buddy/transcript-panel";
 import type {
   CommittedTranscriptEntry,
@@ -9,7 +9,7 @@ import type {
 } from "@/components/meeting-buddy/types";
 import { cx } from "@/components/meeting-buddy/ui";
 
-type SessionDrawerTab = "transcript" | "note";
+type SessionDrawerTab = "transcript" | "qa";
 
 type SessionDrawerProps = {
   onClose: () => void;
@@ -17,9 +17,8 @@ type SessionDrawerProps = {
   onTabChange: (tab: SessionDrawerTab) => void;
   partialTranscript: string;
   provisionalEntries: PendingTranscriptEntry[];
+  qaMarkdown: string;
   transcriptEntries: CommittedTranscriptEntry[];
-  noteMarkdown: string;
-  notePathRelative: string;
 };
 
 function TabButton({
@@ -54,17 +53,16 @@ export function SessionDrawer({
   onTabChange,
   partialTranscript,
   provisionalEntries,
+  qaMarkdown,
   transcriptEntries,
-  noteMarkdown,
-  notePathRelative,
 }: SessionDrawerProps) {
   const segmented = (
     <div className="flex items-center gap-1 rounded-full bg-[var(--surface-raised)] p-1">
       <TabButton active={tab === "transcript"} onClick={() => onTabChange("transcript")}>
         Transcript
       </TabButton>
-      <TabButton active={tab === "note"} onClick={() => onTabChange("note")}>
-        Note
+      <TabButton active={tab === "qa"} onClick={() => onTabChange("qa")}>
+        Buddy Q&amp;A
       </TabButton>
     </div>
   );
@@ -81,7 +79,7 @@ export function SessionDrawer({
               transcriptEntries={transcriptEntries}
             />
           ) : (
-            <NotePanel noteMarkdown={noteMarkdown} notePathRelative={notePathRelative} />
+            <BuddyQaPanel qaMarkdown={qaMarkdown} />
           )}
         </div>
       </div>

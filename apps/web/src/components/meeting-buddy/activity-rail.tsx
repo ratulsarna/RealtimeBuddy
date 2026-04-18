@@ -1,6 +1,6 @@
 "use client";
 
-import { NotePanel } from "@/components/meeting-buddy/note-panel";
+import { BuddyQaPanel } from "@/components/meeting-buddy/buddy-qa-panel";
 import { TranscriptPanel } from "@/components/meeting-buddy/transcript-panel";
 import type {
   CommittedTranscriptEntry,
@@ -8,7 +8,7 @@ import type {
 } from "@/components/meeting-buddy/types";
 import { cx } from "@/components/meeting-buddy/ui";
 
-type ActivityTab = "transcript" | "note";
+type ActivityTab = "transcript" | "qa";
 
 type ActivityRailProps = {
   className?: string;
@@ -16,9 +16,8 @@ type ActivityRailProps = {
   onTabChange: (tab: ActivityTab) => void;
   partialTranscript: string;
   provisionalEntries: PendingTranscriptEntry[];
+  qaMarkdown: string;
   transcriptEntries: CommittedTranscriptEntry[];
-  noteMarkdown: string;
-  notePathRelative: string;
 };
 
 function TabButton({
@@ -53,9 +52,8 @@ export function ActivityRail({
   onTabChange,
   partialTranscript,
   provisionalEntries,
+  qaMarkdown,
   transcriptEntries,
-  noteMarkdown,
-  notePathRelative,
 }: ActivityRailProps) {
   return (
     <section
@@ -69,8 +67,8 @@ export function ActivityRail({
           <TabButton active={tab === "transcript"} onClick={() => onTabChange("transcript")}>
             Transcript
           </TabButton>
-          <TabButton active={tab === "note"} onClick={() => onTabChange("note")}>
-            Note
+          <TabButton active={tab === "qa"} onClick={() => onTabChange("qa")}>
+            Buddy Q&amp;A
           </TabButton>
         </div>
       </div>
@@ -83,7 +81,7 @@ export function ActivityRail({
             transcriptEntries={transcriptEntries}
           />
         ) : (
-          <NotePanel noteMarkdown={noteMarkdown} notePathRelative={notePathRelative} />
+          <BuddyQaPanel qaMarkdown={qaMarkdown} />
         )}
       </div>
     </section>
