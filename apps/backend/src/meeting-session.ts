@@ -22,6 +22,12 @@ import {
   readConfiguredBasePathEnv,
   resolveRealtimeBuddyBasePath,
 } from "./persistent-config";
+import {
+  createSessionLaneRuntimes,
+  type BuddyLaneRuntime,
+  type CreateCodexAppServer,
+  type QuestionLaneRuntime,
+} from "./session-lane-runtimes";
 
 type AudioChunk = {
   pcmBase64: string;
@@ -29,10 +35,6 @@ type AudioChunk = {
 };
 
 type SendEvent = (event: ServerEvent) => void;
-type CreateCodexAppServer = (options: {
-  developerInstructions: string;
-  workingDirectory: string;
-}) => CodexSessionClient;
 
 type MeetingSessionOptions = {
   sampleRate: number;
@@ -68,11 +70,6 @@ type BuddyResponseFailure = {
 };
 
 type SurfacedBuddyEvent = BuddyEvent;
-
-type CodexSessionClient = Pick<
-  CodexAppServer,
-  "ready" | "getSelectedModel" | "askBuddy" | "askQuestion" | "close"
->;
 
 export type MeetingSessionSnapshot = {
   sessionId: string;
@@ -124,7 +121,8 @@ export class MeetingSession {
   private readonly codexWorkingDirectory: string;
   private readonly codexDeveloperInstructions: string;
   private readonly createCodexAppServer: CreateCodexAppServer;
-  private codex: CodexSessionClient | null = null;
+  private buddyRuntime: BuddyLaneRuntime | null = null;
+  private qaRuntime: QuestionLaneRuntime | null = null;
   private readonly audioQueue: AudioChunk[] = [];
   private readonly pendingCommitProvisionalIds: string[] = [];
   private readonly pendingBuddyTranscriptSegments: TranscriptSegment[] = [];
@@ -145,9 +143,9 @@ export class MeetingSession {
   private bridgeConnecting = false;
   private bridgeConnectionAttempts = 0;
   private audioQueueOverflowReported = false;
-  private codexStartupPromise: Promise<void> | null = null;
-  private codexModel = "";
-  private codexUnavailableMessage = "";
+  private buddyStartupPromise: Promise<void> | null = null;
+  private buddyModel = "";
+  private buddyUnavailableMessage = "";
   private stopped = false;
   private lastBuddySurfaceAt = 0;
   private pendingAskCount = 0;
@@ -183,12 +181,7 @@ export class MeetingSession {
     await mkdir(path.dirname(this.notePath), { recursive: true });
     await mkdir(path.dirname(this.logPath), { recursive: true });
     await mkdir(this.codexWorkingDirectory, { recursive: true });
-    if (!this.codex) {
-      this.codex = this.createCodexAppServer({
-        developerInstructions: this.codexDeveloperInstructions,
-        workingDirectory: this.codexWorkingDirectory,
-      });
-    }
+    this.initializeLaneRuntimes();
     await this.writeNote();
     await this.logEvent("session_started", {
       notePath: this.notePathRelative,
@@ -226,7 +219,7 @@ export class MeetingSession {
     });
 
     this.flushQueuedAudio();
-    void this.ensureCodexReady();
+    void this.ensureBuddyReady();
   }
 
   getSnapshot(): MeetingSessionSnapshot {
@@ -239,7 +232,7 @@ export class MeetingSession {
       notePathRelative: this.notePathRelative,
       logPath: this.logPath,
       logPathRelative: this.logPathRelative,
-      model: this.codexModel,
+      model: this.buddyModel,
       partialTranscript: this.partialTranscript,
       provisionalEntries: this.provisionalSegments.map((segment) => ({ ...segment })),
       transcriptEntries: this.transcriptSegments.map((segment) => ({ ...segment })),
@@ -304,7 +297,9 @@ export class MeetingSession {
     this.clearBuddyTurnTimer();
     const runAsk = this.askQueue.then(async () => {
       await this.commitTranscript();
-      const model = await this.requireCodexReady();
+      // Ticket 1 compatibility shim: Q&A still waits for Buddy priming, but that
+      // dependency remains owned by MeetingSession rather than the lane runtimes.
+      const model = await this.requireBuddyReady();
       const askedAt = this.timeStamp(new Date());
       let answer = "";
       let pendingAnswerDelta = "";
@@ -317,7 +312,7 @@ export class MeetingSession {
       });
 
       const context = this.buildQuestionContext();
-      const text = await this.codex?.askQuestion(question, context, (delta) => {
+      const text = await this.requireQuestionRuntime().runQuestion(question, context, (delta) => {
         answer += delta;
         pendingAnswerDelta += delta;
         if (answerDeltaTimer === null) {
@@ -463,7 +458,7 @@ export class MeetingSession {
     this.stopped = true;
     await this.commitTranscript();
     this.closeElevenLabs();
-    this.codex?.close();
+    await Promise.all([this.buddyRuntime?.close(), this.qaRuntime?.close()]);
     await this.writeNote();
     await this.logEvent("session_stopped", {
       transcriptSegments: this.transcriptSegments.length,
@@ -598,25 +593,53 @@ export class MeetingSession {
     await writeFile(this.notePath, this.currentMarkdown(), "utf8");
   }
 
-  private async ensureCodexReady() {
-    if (this.codexUnavailableMessage || this.codexModel) {
+  private initializeLaneRuntimes() {
+    if (this.buddyRuntime && this.qaRuntime) {
       return;
     }
 
-    if (!this.codexStartupPromise) {
-      this.codexStartupPromise = (async () => {
-        try {
-          if (!this.codex) {
-            this.codex = this.createCodexAppServer({
-              developerInstructions: this.codexDeveloperInstructions,
-              workingDirectory: this.codexWorkingDirectory,
-            });
-          }
+    const { buddyRuntime, qaRuntime } = createSessionLaneRuntimes({
+      createCodexAppServer: this.createCodexAppServer,
+      developerInstructions: this.codexDeveloperInstructions,
+      workingDirectory: this.codexWorkingDirectory,
+    });
+    this.buddyRuntime = buddyRuntime;
+    this.qaRuntime = qaRuntime;
+  }
 
-          await this.codex.ready();
-          const model = await this.codex.getSelectedModel();
+  private requireBuddyRuntime() {
+    this.initializeLaneRuntimes();
+
+    if (!this.buddyRuntime) {
+      throw new Error("Buddy runtime is unavailable.");
+    }
+
+    return this.buddyRuntime;
+  }
+
+  private requireQuestionRuntime() {
+    this.initializeLaneRuntimes();
+
+    if (!this.qaRuntime) {
+      throw new Error("Q&A runtime is unavailable.");
+    }
+
+    return this.qaRuntime;
+  }
+
+  private async ensureBuddyReady() {
+    if (this.buddyUnavailableMessage || this.buddyModel) {
+      return;
+    }
+
+    if (!this.buddyStartupPromise) {
+      this.buddyStartupPromise = (async () => {
+        try {
+          const buddyRuntime = this.requireBuddyRuntime();
+          await buddyRuntime.ready();
+          const model = await buddyRuntime.getSelectedModel();
           await this.primeBuddySession(model);
-          this.codexModel = model;
+          this.buddyModel = model;
           if (this.stopped) {
             return;
           }
@@ -630,37 +653,37 @@ export class MeetingSession {
             codexDeveloperInstructionsLength: this.codexDeveloperInstructions.length,
           });
         } catch (error) {
-          this.codexUnavailableMessage = `Buddy Q&A unavailable: ${String(error)}`;
+          this.buddyUnavailableMessage = `Buddy Q&A unavailable: ${String(error)}`;
           if (this.stopped) {
             return;
           }
 
           this.emitEvent({
             type: "status",
-            message: `${this.codexUnavailableMessage} Live capture will continue without Q&A.`,
+            message: `${this.buddyUnavailableMessage} Live capture will continue without Q&A.`,
           });
           void this.logEvent("codex_unavailable", {
-            message: this.codexUnavailableMessage,
+            message: this.buddyUnavailableMessage,
           });
         }
       })();
     }
 
-    await this.codexStartupPromise;
+    await this.buddyStartupPromise;
   }
 
-  private async requireCodexReady() {
-    await this.ensureCodexReady();
+  private async requireBuddyReady() {
+    await this.ensureBuddyReady();
 
-    if (this.codexUnavailableMessage) {
-      throw new Error(this.codexUnavailableMessage);
+    if (this.buddyUnavailableMessage) {
+      throw new Error(this.buddyUnavailableMessage);
     }
 
-    if (!this.codexModel) {
+    if (!this.buddyModel) {
       throw new Error("Buddy Q&A is still starting. Please try again in a moment.");
     }
 
-    return this.codexModel;
+    return this.buddyModel;
   }
 
   async generateBuddyResponse(
@@ -670,23 +693,12 @@ export class MeetingSession {
     response: BuddyResponse;
     parseFailure: BuddyResponseFailure | null;
   }> {
-    const model = await this.requireCodexReady();
+    const model = await this.requireBuddyReady();
     const prompt = buildBuddyTurnPrompt({
       context,
       trigger,
     });
-    const result = await this.codex?.askBuddy(prompt);
-    const fallbackResponse = this.noopBuddyResponse();
-
-    if (!result) {
-      return {
-        response: fallbackResponse,
-        parseFailure: {
-          error: "Buddy returned no result.",
-          stage: "schema_validation" as const,
-        },
-      };
-    }
+    const result = await this.requireBuddyRuntime().runBuddyTurn(prompt);
 
     await this.logEvent("buddy_response_received", {
       model,
@@ -733,14 +745,7 @@ export class MeetingSession {
       staticUserSeed: this.staticUserSeed,
       workingDirectory: this.codexWorkingDirectory,
     });
-    const result = await this.codex?.askBuddy(prompt);
-
-    if (!result) {
-      await this.logEvent("buddy_priming_missing_result", {
-        model,
-      });
-      return;
-    }
+    const result = await this.requireBuddyRuntime().prime(prompt);
 
     await this.logEvent("buddy_priming_completed", {
       model,
@@ -916,16 +921,6 @@ export class MeetingSession {
     ].join("\n");
   }
 
-  private noopBuddyResponse(): BuddyResponse {
-    return {
-      shouldSurface: false,
-      type: "noop",
-      title: "",
-      body: "",
-      suggestedQuestion: null,
-    };
-  }
-
   private normalizeSeed(primary: string | undefined, fallback = "") {
     return primary?.trim() || fallback.trim();
   }
@@ -1033,7 +1028,7 @@ export class MeetingSession {
   }
 
   private enqueueBuddyTranscriptSegment(segment: TranscriptSegment) {
-    if (this.stopped || this.codexUnavailableMessage) {
+    if (this.stopped || this.buddyUnavailableMessage) {
       return;
     }
 
@@ -1160,7 +1155,7 @@ export class MeetingSession {
   private maybeScheduleBuddyTurnLoop(delayMs = BUDDY_TRANSCRIPT_BATCH_WINDOW_MS) {
     if (
       this.stopped ||
-      this.codexUnavailableMessage ||
+      this.buddyUnavailableMessage ||
       this.hasPendingAsk() ||
       this.pendingBuddyTranscriptSegments.length === 0 ||
       this.buddyTurnLoopPromise ||

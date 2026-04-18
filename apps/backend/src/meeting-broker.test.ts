@@ -604,11 +604,11 @@ test("MeetingBroker forwards the selected language preference into session creat
 
 test("MeetingBroker sends a snapshot when a companion joins an existing session", async () => {
   const session = createMockSession({
-      snapshot: createMockSnapshot({
-        sessionId: "44444444-4444-4444-4444-444444444444",
-        transcriptEntries: [{ text: "Hello team", committedAt: "10:00:00" }],
-        questionAnswers: [{ question: "What happened?", answer: "Kickoff", askedAt: "10:02:00" }],
-        partialTranscript: "still talking",
+    snapshot: createMockSnapshot({
+      sessionId: "44444444-4444-4444-4444-444444444444",
+      transcriptEntries: [{ text: "Hello team", committedAt: "10:00:00" }],
+      questionAnswers: [{ question: "What happened?", answer: "Kickoff", askedAt: "10:02:00" }],
+      partialTranscript: "still talking",
     }),
   });
   const broker = new MeetingBroker(() => session, readEmptyConfig);
@@ -644,12 +644,29 @@ test("MeetingBroker sends a snapshot when a companion joins an existing session"
   await flushAsyncWork();
 
   const events = parseSentEvents(companionSocket);
+  const sessionReady = events.find((event) => event.type === "session_ready");
+  assert.ok(sessionReady);
+  if (sessionReady?.type !== "session_ready") {
+    return;
+  }
+
+  assert.equal(sessionReady.model, "gpt-5.4");
+
+  const buddyReady = events.find((event) => event.type === "buddy_ready");
+  assert.ok(buddyReady);
+  if (buddyReady?.type !== "buddy_ready") {
+    return;
+  }
+
+  assert.equal(buddyReady.model, "gpt-5.4");
+
   const snapshot = events.find((event) => event.type === "session_snapshot");
   assert.ok(snapshot);
   if (snapshot?.type !== "session_snapshot") {
     return;
   }
 
+  assert.equal(snapshot.model, "gpt-5.4");
   assert.equal(snapshot.partialTranscript, "still talking");
   assert.deepEqual(snapshot.transcriptEntries, [{ text: "Hello team", committedAt: "10:00:00" }]);
   assert.deepEqual(snapshot.questionAnswers, [

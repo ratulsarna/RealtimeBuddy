@@ -224,6 +224,69 @@ test("MeetingSession ask waits for Buddy priming to finish", async () => {
   }
 });
 
+test("MeetingSession stop closes the shared lane runtime only once", async () => {
+  const previousBasePath = process.env.REALTIMEBUDDY_BASE_PATH;
+  process.env.REALTIMEBUDDY_BASE_PATH = "/tmp/realtimebuddy-stop-close";
+
+  const timeline: string[] = [];
+  let closeCalls = 0;
+
+  try {
+    const session = new MeetingSession({
+      sampleRate: 48_000,
+      title: "Close semantics",
+      includeTabAudio: false,
+      languagePreference: "english",
+      sendEvent: (event) => {
+        timeline.push(`event:${event.type}`);
+      },
+      createCodexAppServer: () => ({
+        ready: async () => {
+          timeline.push("codex:ready");
+        },
+        getSelectedModel: async () => {
+          timeline.push("codex:model");
+          return "gpt-5.4";
+        },
+        askBuddy: async () => {
+          timeline.push("codex:askBuddy");
+          return {
+            ok: true,
+            response: {
+              shouldSurface: false,
+              type: "noop",
+              title: "",
+              body: "",
+              suggestedQuestion: null,
+            },
+            rawText:
+              '{"shouldSurface":false,"type":"noop","title":"","body":"","suggestedQuestion":null}',
+          };
+        },
+        askQuestion: async () => "Answer",
+        close: () => {
+          closeCalls += 1;
+        },
+      }),
+    });
+
+    (session as any).ensureElevenLabsConnected = () => undefined;
+
+    await session.start();
+    await waitForEvent(timeline, "event:buddy_ready");
+    await session.stop();
+
+    assert.equal(closeCalls, 1);
+    assert.ok(timeline.includes("event:session_stopped"));
+  } finally {
+    if (previousBasePath === undefined) {
+      delete process.env.REALTIMEBUDDY_BASE_PATH;
+    } else {
+      process.env.REALTIMEBUDDY_BASE_PATH = previousBasePath;
+    }
+  }
+});
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
