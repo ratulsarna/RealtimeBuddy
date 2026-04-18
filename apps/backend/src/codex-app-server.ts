@@ -108,6 +108,13 @@ type CodexAppServerOptions = {
 
 type CodexSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
 type CodexApprovalPolicy = "never" | "on-request" | "on-failure" | "untrusted";
+type CodexReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
 
 type ThreadStartParams = {
   model: string;
@@ -121,6 +128,18 @@ type ThreadStartParams = {
   serviceName: "realtimebuddy";
 };
 
+type TurnStartParams = {
+  threadId: string;
+  cwd: string;
+  input: Array<{
+    type: "text";
+    text: string;
+    text_elements: [];
+  }>;
+  model: string;
+  effort: CodexReasoningEffort;
+};
+
 const PREFERRED_MODELS = [
   process.env.CODEX_MODEL ?? "",
   "gpt-5.3-codex-spark",
@@ -129,6 +148,7 @@ const PREFERRED_MODELS = [
 ];
 const DEFAULT_CODEX_SANDBOX_MODE: CodexSandboxMode = "danger-full-access";
 const DEFAULT_CODEX_APPROVAL_POLICY: CodexApprovalPolicy = "never";
+const DEFAULT_CODEX_REASONING_EFFORT: CodexReasoningEffort = "high";
 const REQUEST_TIMEOUT_MS = 20_000;
 const TURN_TIMEOUT_MS = 90_000;
 
@@ -178,6 +198,27 @@ export async function buildThreadStartParams(options: {
     persistExtendedHistory: false,
     developerInstructions: options.developerInstructions,
     serviceName: "realtimebuddy",
+  };
+}
+
+export async function buildTurnStartParams(options: {
+  inputText: string;
+  modelPromise: Promise<string>;
+  threadId: string;
+  workingDirectory: string;
+}): Promise<TurnStartParams> {
+  return {
+    threadId: options.threadId,
+    cwd: options.workingDirectory,
+    input: [
+      {
+        type: "text",
+        text: options.inputText,
+        text_elements: [],
+      },
+    ],
+    model: await options.modelPromise,
+    effort: resolveCodexReasoningEffort(process.env.CODEX_REASONING_EFFORT),
   };
 }
 
@@ -337,19 +378,15 @@ export class CodexAppServer {
 
   private async runTurn(inputText: string, onDelta: (delta: string) => void) {
     const threadId = await this.getThreadId();
-    const turn = await this.request<TurnStartResponse>("turn/start", {
-      threadId,
-      cwd: this.workingDirectory,
-      input: [
-        {
-          type: "text",
-          text: inputText,
-          text_elements: [],
-        },
-      ],
-      model: await this.getSelectedModel(),
-      effort: "high",
-    });
+    const turn = await this.request<TurnStartResponse>(
+      "turn/start",
+      await buildTurnStartParams({
+        inputText,
+        modelPromise: this.getSelectedModel(),
+        threadId,
+        workingDirectory: this.workingDirectory,
+      })
+    );
 
     return await new Promise<string>((resolve, reject) => {
       const turnId = turn.turn.id;
@@ -503,6 +540,7 @@ export class CodexAppServer {
 export function buildCodexAppServerArgs() {
   const sandboxMode = resolveCodexSandboxMode(process.env.CODEX_SANDBOX_MODE);
   const approvalPolicy = resolveCodexApprovalPolicy(process.env.CODEX_APPROVAL_POLICY);
+  const reasoningEffort = resolveCodexReasoningEffort(process.env.CODEX_REASONING_EFFORT);
 
   return [
     "app-server",
@@ -512,6 +550,8 @@ export function buildCodexAppServerArgs() {
     `sandbox_mode="${sandboxMode}"`,
     "-c",
     `approval_policy="${approvalPolicy}"`,
+    "-c",
+    `model_reasoning_effort="${reasoningEffort}"`,
   ];
 }
 
@@ -544,5 +584,26 @@ function resolveCodexApprovalPolicy(value: string | undefined): CodexApprovalPol
       return "untrusted";
     default:
       return DEFAULT_CODEX_APPROVAL_POLICY;
+  }
+}
+
+function resolveCodexReasoningEffort(value: string | undefined): CodexReasoningEffort {
+  const normalized = value?.trim().toLowerCase();
+
+  switch (normalized) {
+    case "none":
+      return "none";
+    case "minimal":
+      return "minimal";
+    case "low":
+      return "low";
+    case "medium":
+      return "medium";
+    case "high":
+      return "high";
+    case "xhigh":
+      return "xhigh";
+    default:
+      return DEFAULT_CODEX_REASONING_EFFORT;
   }
 }
