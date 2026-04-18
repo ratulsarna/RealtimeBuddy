@@ -52,6 +52,25 @@ export function FieldLabel({
   );
 }
 
+export function Label({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cx(
+        "text-[0.82rem] font-medium text-[var(--foreground)]",
+        className
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
 export function StatusBadge({
   children,
   className,

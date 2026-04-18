@@ -13,8 +13,10 @@ type WorkspaceHeaderProps = {
   onResumeSession: () => void;
   onStartSession: () => void;
   onStopSession: () => void;
-  onToggleSidebar: () => void;
+  onToggleActivity: () => void;
+  onToggleSettings: () => void;
   sessionMode: SessionMode;
+  showActivityAction: boolean;
   showStartAction: boolean;
   showSessionTitle: boolean;
   statusTone: "active" | "warning" | "neutral";
@@ -33,8 +35,10 @@ export function WorkspaceHeader({
   onResumeSession,
   onStartSession,
   onStopSession,
-  onToggleSidebar,
+  onToggleActivity,
+  onToggleSettings,
   sessionMode,
+  showActivityAction,
   showStartAction,
   showSessionTitle,
   statusTone,
@@ -108,9 +112,33 @@ export function WorkspaceHeader({
           )}
         </div>
 
+        {showActivityAction ? (
+          <button
+            aria-label="Open transcript and note"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl border border-[var(--line)]/70 bg-[var(--surface-input)] px-3 text-sm text-[var(--foreground)] transition hover:bg-[var(--surface-hover)]"
+            onClick={onToggleActivity}
+            type="button"
+          >
+            <svg
+              className="h-[18px] w-[18px]"
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="1.6"
+              viewBox="0 0 24 24"
+            >
+              <path d="M7 4h10a1 1 0 0 1 1 1v15l-6-3-6 3V5a1 1 0 0 1 1-1z" />
+              <path d="M9 9h6M9 12h4" />
+            </svg>
+            <span className="hidden sm:inline">Activity</span>
+          </button>
+        ) : null}
+
         <button
+          aria-label="Open settings"
           className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl border border-[var(--line)]/70 bg-[var(--surface-input)] px-3 text-sm text-[var(--foreground)] transition hover:bg-[var(--surface-hover)]"
-          onClick={onToggleSidebar}
+          onClick={onToggleSettings}
           type="button"
         >
           <svg

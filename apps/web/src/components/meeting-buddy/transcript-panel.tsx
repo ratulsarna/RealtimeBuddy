@@ -2,7 +2,6 @@ import type {
   CommittedTranscriptEntry,
   PendingTranscriptEntry,
 } from "@/components/meeting-buddy/types";
-import { SectionLabel } from "@/components/meeting-buddy/ui";
 
 type TranscriptPanelProps = {
   partialTranscript: string;
@@ -15,39 +14,44 @@ export function TranscriptPanel({
   provisionalEntries,
   transcriptEntries,
 }: TranscriptPanelProps) {
-  return (
-    <div className="p-5 space-y-4">
-      <SectionLabel>Transcript</SectionLabel>
+  const hasAnything =
+    Boolean(partialTranscript) ||
+    provisionalEntries.length > 0 ||
+    transcriptEntries.length > 0;
 
-      {/* Live speech */}
+  return (
+    <div className="space-y-5">
       {partialTranscript ? (
-        <div className="rounded-lg border border-[var(--accent)]/20 bg-[var(--accent-soft)]/30 px-3 py-2.5">
-          <div className="mb-1.5 flex items-center gap-1.5">
+        <div className="rounded-2xl border border-[var(--accent)]/20 bg-[var(--accent-soft)]/30 px-4 py-3">
+          <div className="mb-1.5 flex items-center gap-2">
             <span className="live-dot" />
-            <span className="mono text-[0.5rem] uppercase tracking-widest text-[var(--accent-text)]">
-              Live
+            <span className="text-[0.72rem] font-medium text-[var(--accent-text)]">
+              Live now
             </span>
           </div>
-          <p className="text-sm leading-6 text-[var(--foreground-strong)]">{partialTranscript}</p>
+          <p className="text-[0.92rem] leading-7 text-[var(--foreground-strong)]">
+            {partialTranscript}
+          </p>
         </div>
       ) : null}
 
-      {/* Pending chunks */}
       {provisionalEntries.length > 0 ? (
         <div className="space-y-2">
-          <span className="mono text-[0.5rem] uppercase tracking-widest text-[var(--foreground-muted)]">
-            Pending ({provisionalEntries.length})
-          </span>
+          <p className="text-[0.72rem] text-[var(--foreground-muted)]">
+            Processing {provisionalEntries.length}
+          </p>
           {provisionalEntries
             .slice()
             .reverse()
             .map((entry) => (
               <div
-                className="rounded-lg bg-[var(--surface-raised)] px-3 py-2"
+                className="rounded-2xl bg-[var(--surface-raised)] px-4 py-3"
                 key={entry.id}
               >
-                <p className="text-sm leading-6 text-[var(--foreground)]">{entry.text}</p>
-                <p className="mono mt-1 text-[0.5rem] text-[var(--foreground-muted)]">
+                <p className="text-[0.9rem] leading-7 text-[var(--foreground)]">
+                  {entry.text}
+                </p>
+                <p className="mt-1 text-[0.68rem] text-[var(--foreground-muted)]">
                   {entry.at}
                 </p>
               </div>
@@ -55,26 +59,29 @@ export function TranscriptPanel({
         </div>
       ) : null}
 
-      {/* Committed transcript */}
-      <div className="space-y-1">
-        {transcriptEntries.length > 0 ? (
-          transcriptEntries.map((entry, index) => (
+      {transcriptEntries.length > 0 ? (
+        <div className="space-y-3">
+          {transcriptEntries.map((entry, index) => (
             <div
-              className="border-l-2 border-[var(--line)] py-2 pl-3"
+              className="border-l border-[var(--line)] pl-4"
               key={`${entry.at}-${index}`}
             >
-              <p className="mono text-[0.5rem] text-[var(--foreground-muted)]">{entry.at}</p>
-              <p className="mt-0.5 text-sm leading-6 text-[var(--foreground)]">{entry.text}</p>
+              <p className="text-[0.68rem] text-[var(--foreground-muted)]">
+                {entry.at}
+              </p>
+              <p className="mt-1 text-[0.9rem] leading-7 text-[var(--foreground)]">
+                {entry.text}
+              </p>
             </div>
-          ))
-        ) : (
-          <p className="text-sm text-[var(--foreground-muted)]">
-            {partialTranscript
-              ? "Waiting for committed speech..."
-              : "Transcript appears here during the session."}
-          </p>
-        )}
-      </div>
+          ))}
+        </div>
+      ) : null}
+
+      {!hasAnything ? (
+        <p className="text-sm text-[var(--foreground-muted)]">
+          Transcript appears here once the session is capturing audio.
+        </p>
+      ) : null}
     </div>
   );
 }

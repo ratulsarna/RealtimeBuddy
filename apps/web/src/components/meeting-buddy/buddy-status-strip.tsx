@@ -119,7 +119,7 @@ export function BuddyStatusStrip({
       {briefOpen && hasBrief ? (
         <div
           ref={popoverRef}
-          className="slide-in-right absolute right-2 top-[calc(100%+0.45rem)] z-20 w-80 rounded-[1.5rem] border border-[var(--panel-border)] bg-[var(--panel-bg)] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
+          className="slide-in-right absolute right-2 top-[calc(100%+0.45rem)] z-20 w-80 rounded-[1.5rem] border border-[var(--panel-border)] bg-[var(--drawer-panel-bg)] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.28)] backdrop-blur-xl"
         >
           {meetingSeed.trim() ? (
             <div className="mb-2 last:mb-0">

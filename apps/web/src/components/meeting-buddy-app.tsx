@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 
 import { BuddyLane } from "@/components/meeting-buddy/buddy-lane";
+import { DrawerShell } from "@/components/meeting-buddy/drawer-shell";
 import {
   formatConnectionStateLabel,
   getStatusTone,
 } from "@/components/meeting-buddy/format";
 import { MeetingBriefCard } from "@/components/meeting-buddy/meeting-brief-card";
 import { NotePanel } from "@/components/meeting-buddy/note-panel";
+import { SessionDrawer } from "@/components/meeting-buddy/session-drawer";
 import { SessionSidebar } from "@/components/meeting-buddy/session-sidebar";
 import { TranscriptPanel } from "@/components/meeting-buddy/transcript-panel";
 import type {
@@ -81,7 +83,7 @@ export function MeetingBuddyApp({
   const [, setCompanionClientCount] = useState(0);
   const [isAsking, setIsAsking] = useState(false);
   const [isSavingStandingContext, setIsSavingStandingContext] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeDrawer, setActiveDrawer] = useState<"settings" | "session" | null>(null);
 
   const socketRef = useRef<WebSocket | null>(null);
   const captureRef = useRef<AudioCaptureHandle | null>(null);
@@ -118,15 +120,14 @@ export function MeetingBuddyApp({
     setStaticUserSeed(initialStaticUserSeed);
   }, [initialStaticUserSeed]);
 
-  // Close drawer on Escape
   useEffect(() => {
-    if (!sidebarOpen) return;
+    if (!activeDrawer) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSidebarOpen(false);
+      if (e.key === "Escape") setActiveDrawer(null);
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [sidebarOpen]);
+  }, [activeDrawer]);
 
   useEffect(() => {
     if (window.location.hostname === "0.0.0.0") {
@@ -904,12 +905,8 @@ export function MeetingBuddyApp({
 
   const sidebarProps = {
     canJoin,
-    canPause,
-    canResume,
-    canReset,
     canSaveStandingContext,
     canStart,
-    canStop,
     includeTabAudio,
     isSavingStandingContext,
     languagePreference,
@@ -918,19 +915,14 @@ export function MeetingBuddyApp({
     onIncludeTabAudioChange: setIncludeTabAudio,
     onJoinSession: () => { void joinSession(); },
     onLanguageChange: setLanguagePreference,
-    onPauseSession: pauseSession,
-    onResumeSession: resumeSession,
-    onResetSession: resetMeetingState,
     onSaveStandingContext: () => { void saveStandingContext(); },
     onSelectedMicChange: setSelectedMicId,
     onSessionIdInputChange: setSessionIdInput,
     onStaticUserSeedChange: setStaticUserSeed,
-    onStopSession: stopSession,
     onTitleChange: setTitle,
     selectedMicId,
     sessionId,
     sessionIdInput,
-    sessionMode,
     staticUserSeed,
     title,
   } as const;
@@ -949,8 +941,14 @@ export function MeetingBuddyApp({
         onResetSession={resetMeetingState}
         onStartSession={startSession}
         onStopSession={stopSession}
-        onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+        onToggleActivity={() =>
+          setActiveDrawer((prev) => (prev === "session" ? null : "session"))
+        }
+        onToggleSettings={() =>
+          setActiveDrawer((prev) => (prev === "settings" ? null : "settings"))
+        }
         sessionMode={sessionMode}
+        showActivityAction={!showBrief}
         showStartAction={!showBrief}
         showSessionTitle={!showBrief}
         statusTone={statusTone}
@@ -1029,32 +1027,27 @@ export function MeetingBuddyApp({
               </div>
             </section>
 
-            <aside className="shell-rail hidden w-[24rem] flex-shrink-0 flex-col overflow-hidden rounded-[2rem] border border-[var(--panel-border)] lg:flex">
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <TranscriptPanel
-                  partialTranscript={partialTranscript}
-                  provisionalEntries={provisionalEntries}
-                  transcriptEntries={transcriptEntries}
-                />
-              </div>
-              <div className="max-h-72 flex-shrink-0 overflow-y-auto border-t border-[var(--panel-border)]/80">
-                <NotePanel noteMarkdown={noteMarkdown} notePathRelative={notePathRelative} />
-              </div>
-            </aside>
           </div>
         )}
       </div>
 
-      {sidebarOpen ? (
-        <div className="fixed inset-0 z-50" onClick={() => setSidebarOpen(false)}>
-          <div className="drawer-backdrop absolute inset-0" />
-          <aside
-            className="slide-in-right absolute bottom-0 right-0 top-0 w-full max-w-[26rem] overflow-y-auto border-l border-[var(--panel-border)] bg-[var(--drawer-panel-bg)]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <SessionSidebar {...sidebarProps} onClose={() => setSidebarOpen(false)} />
-          </aside>
-        </div>
+      {activeDrawer === "session" ? (
+        <SessionDrawer
+          noteMarkdown={noteMarkdown}
+          notePathRelative={notePathRelative}
+          onClose={() => setActiveDrawer(null)}
+          onTabChange={setSecondaryPanelTab}
+          partialTranscript={partialTranscript}
+          provisionalEntries={provisionalEntries}
+          tab={secondaryPanelTab}
+          transcriptEntries={transcriptEntries}
+        />
+      ) : null}
+
+      {activeDrawer === "settings" ? (
+        <DrawerShell onClose={() => setActiveDrawer(null)} title="Settings">
+          <SessionSidebar {...sidebarProps} />
+        </DrawerShell>
       ) : null}
     </main>
   );
