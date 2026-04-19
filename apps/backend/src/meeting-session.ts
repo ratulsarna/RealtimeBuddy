@@ -11,8 +11,6 @@ import type {
 
 import {
   buildBuddyDeveloperInstructions,
-  buildBuddyPrimingPrompt,
-  buildBuddyTurnPrompt,
   type BuddyResponse,
 } from "./buddy-contract";
 import { CodexAppServer } from "./codex-app-server";
@@ -297,9 +295,16 @@ export class MeetingSession {
     this.clearBuddyTurnTimer();
     const runAsk = this.askQueue.then(async () => {
       await this.commitTranscript();
-      // Ticket 1 compatibility shim: Q&A still waits for Buddy priming, but that
-      // dependency remains owned by MeetingSession rather than the lane runtimes.
-      const model = await this.requireBuddyReady();
+      const questionRuntime = this.requireQuestionRuntime();
+      await questionRuntime.initialize({
+        includeTabAudio: this.includeTabAudio,
+        languagePreference: this.languagePreference,
+        meetingSeed: this.meetingSeed,
+        meetingTitle: this.title,
+        staticUserSeed: this.staticUserSeed,
+        workingDirectory: this.codexWorkingDirectory,
+      });
+      const model = await questionRuntime.getSelectedModel();
       const askedAt = this.timeStamp(new Date());
       let answer = "";
       let pendingAnswerDelta = "";
@@ -312,7 +317,7 @@ export class MeetingSession {
       });
 
       const context = this.buildQuestionContext();
-      const text = await this.requireQuestionRuntime().runQuestion(question, context, (delta) => {
+      const text = await questionRuntime.runQuestion(question, context, (delta) => {
         answer += delta;
         pendingAnswerDelta += delta;
         if (answerDeltaTimer === null) {
@@ -636,9 +641,16 @@ export class MeetingSession {
       this.buddyStartupPromise = (async () => {
         try {
           const buddyRuntime = this.requireBuddyRuntime();
-          await buddyRuntime.ready();
+          const result = await buddyRuntime.initialize({
+            includeTabAudio: this.includeTabAudio,
+            languagePreference: this.languagePreference,
+            meetingSeed: this.meetingSeed,
+            meetingTitle: this.title,
+            staticUserSeed: this.staticUserSeed,
+            workingDirectory: this.codexWorkingDirectory,
+          });
           const model = await buddyRuntime.getSelectedModel();
-          await this.primeBuddySession(model);
+          await this.logBuddyPrimingResult(model, result);
           this.buddyModel = model;
           if (this.stopped) {
             return;
@@ -649,20 +661,22 @@ export class MeetingSession {
             model,
           });
           void this.logEvent("codex_ready", {
+            lane: "buddy",
             model,
             codexDeveloperInstructionsLength: this.codexDeveloperInstructions.length,
           });
         } catch (error) {
-          this.buddyUnavailableMessage = `Buddy Q&A unavailable: ${String(error)}`;
+          this.buddyUnavailableMessage = `Buddy unavailable: ${String(error)}`;
           if (this.stopped) {
             return;
           }
 
           this.emitEvent({
             type: "status",
-            message: `${this.buddyUnavailableMessage} Live capture will continue without Q&A.`,
+            message: `${this.buddyUnavailableMessage} Live capture will continue. Question answering uses a separate lane and may still be available.`,
           });
           void this.logEvent("codex_unavailable", {
+            lane: "buddy",
             message: this.buddyUnavailableMessage,
           });
         }
@@ -680,7 +694,7 @@ export class MeetingSession {
     }
 
     if (!this.buddyModel) {
-      throw new Error("Buddy Q&A is still starting. Please try again in a moment.");
+      throw new Error("Buddy is still starting. Please try again in a moment.");
     }
 
     return this.buddyModel;
@@ -694,11 +708,10 @@ export class MeetingSession {
     parseFailure: BuddyResponseFailure | null;
   }> {
     const model = await this.requireBuddyReady();
-    const prompt = buildBuddyTurnPrompt({
+    const result = await this.requireBuddyRuntime().runBuddyTurn({
       context,
       trigger,
     });
-    const result = await this.requireBuddyRuntime().runBuddyTurn(prompt);
 
     await this.logEvent("buddy_response_received", {
       model,
@@ -736,17 +749,7 @@ export class MeetingSession {
     );
   }
 
-  private async primeBuddySession(model: string) {
-    const prompt = buildBuddyPrimingPrompt({
-      includeTabAudio: this.includeTabAudio,
-      languagePreference: this.languagePreference,
-      meetingSeed: this.meetingSeed,
-      meetingTitle: this.title,
-      staticUserSeed: this.staticUserSeed,
-      workingDirectory: this.codexWorkingDirectory,
-    });
-    const result = await this.requireBuddyRuntime().prime(prompt);
-
+  private async logBuddyPrimingResult(model: string, result: Awaited<ReturnType<BuddyLaneRuntime["initialize"]>>) {
     await this.logEvent("buddy_priming_completed", {
       model,
       shouldSurface: result.response.shouldSurface,
