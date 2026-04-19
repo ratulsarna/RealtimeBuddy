@@ -179,7 +179,7 @@ export function BuddyLane({
       <div className="mx-auto flex h-full w-full max-w-[54rem] min-h-0 flex-col px-1 sm:px-3">
         <div className="flex-shrink-0 pb-4 pt-2">
           <BuddyStatusStrip
-            eventCount={events.length}
+            events={events}
             meetingSeed={meetingSeed}
             staticUserSeed={staticUserSeed}
             state={state}

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import type { BuddyEvent, BuddyEventType } from "@realtimebuddy/shared/protocol";
+
 import { cx } from "@/components/meeting-buddy/ui";
 
 export type BuddyState =
@@ -15,7 +17,7 @@ export type BuddyState =
 
 type BuddyStatusStripProps = {
   state: BuddyState;
-  eventCount: number;
+  events: BuddyEvent[];
   staticUserSeed: string;
   meetingSeed: string;
 };
@@ -29,6 +31,36 @@ const LABELS: Record<BuddyState, { title: string; hint: string }> = {
   paused: { title: "Paused", hint: "Capture is paused. Resume when ready." },
   wrapup: { title: "Wrap-up", hint: "Session over — here's what Buddy noticed." },
 };
+
+// Mirror the human-readable labels from buddy-card.tsx's TYPE_META locally because
+// the card component is intentionally presentational and out of scope for this action.
+const EVENT_TYPE_LABELS: Record<BuddyEventType, string> = {
+  ask_this: "Ask this",
+  cover_this: "Cover this",
+  needs_owner: "Needs owner",
+  important_signal: "Important signal",
+};
+
+function formatEventsForClipboard(events: BuddyEvent[]): string {
+  return [...events]
+    .reverse()
+    .map((event) => {
+      const lines = [`[${EVENT_TYPE_LABELS[event.type]}] ${event.title}`];
+      const body = event.body.trim();
+      const suggestedQuestion = event.suggestedQuestion?.trim();
+
+      if (body) {
+        lines.push(body);
+      }
+
+      if (suggestedQuestion) {
+        lines.push(`Suggested question: "${suggestedQuestion}"`);
+      }
+
+      return lines.join("\n");
+    })
+    .join("\n\n");
+}
 
 function useClickOutside<T extends HTMLElement>(onClose: () => void) {
   const ref = useRef<T | null>(null);
@@ -46,15 +78,42 @@ function useClickOutside<T extends HTMLElement>(onClose: () => void) {
 
 export function BuddyStatusStrip({
   state,
-  eventCount,
+  events,
   staticUserSeed,
   meetingSeed,
 }: BuddyStatusStripProps) {
   const [briefOpen, setBriefOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const popoverRef = useClickOutside<HTMLDivElement>(() => setBriefOpen(false));
+  const copyResetTimeoutRef = useRef<number | null>(null);
 
   const { title, hint } = LABELS[state];
+  const eventCount = events.length;
   const hasBrief = Boolean(meetingSeed.trim() || staticUserSeed.trim());
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimeoutRef.current !== null) {
+        window.clearTimeout(copyResetTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopyAll = async () => {
+    try {
+      await navigator.clipboard.writeText(formatEventsForClipboard(events));
+      setCopied(true);
+      if (copyResetTimeoutRef.current !== null) {
+        window.clearTimeout(copyResetTimeoutRef.current);
+      }
+      copyResetTimeoutRef.current = window.setTimeout(() => {
+        setCopied(false);
+        copyResetTimeoutRef.current = null;
+      }, 1400);
+    } catch {
+      // ignore clipboard failures silently to match the per-card copy action
+    }
+  };
 
   const dotClass =
     state === "nudging"
@@ -89,6 +148,19 @@ export function BuddyStatusStrip({
           <span className="inline-flex h-7 items-center rounded-full bg-[var(--surface-raised)] px-3 text-[0.72rem] font-medium text-[var(--foreground)]">
             {eventCount} card{eventCount === 1 ? "" : "s"}
           </span>
+        ) : null}
+
+        {eventCount > 0 ? (
+          <button
+            className={cx(
+              "inline-flex h-7 items-center justify-center rounded-full border border-[var(--line)]/70 bg-[var(--surface-input)] px-3 text-[0.72rem] font-medium text-[var(--foreground)] transition hover:bg-[var(--surface-hover)]",
+              copied && "bg-[var(--surface-raised-strong)]"
+            )}
+            onClick={() => void handleCopyAll()}
+            type="button"
+          >
+            {copied ? "Copied" : "Copy all"}
+          </button>
         ) : null}
 
         {hasBrief ? (
