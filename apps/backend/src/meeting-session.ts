@@ -128,6 +128,7 @@ export class MeetingSession {
   private resumePending = false;
   private stopping = false;
   private pausePromise: Promise<void> | null = null;
+  private stopPromise: Promise<void> | null = null;
   private askQueue = Promise.resolve();
   private commitQueue = Promise.resolve();
   private buddyTurnTimer: NodeJS.Timeout | null = null;
@@ -146,7 +147,6 @@ export class MeetingSession {
   private questionReady = false;
   private stopped = false;
   private lastBuddySurfaceAt = 0;
-  private pendingAskCount = 0;
 
   constructor(options: MeetingSessionOptions) {
     this.sampleRate = options.sampleRate;
@@ -304,61 +304,68 @@ export class MeetingSession {
   }
 
   ask(question: string) {
-    this.pendingAskCount += 1;
-    this.clearBuddyTurnTimer();
+    if (this.stopping || this.stopped) {
+      return Promise.reject(new Error("Session is stopping."));
+    }
+
     const runAsk = this.askQueue.then(async () => {
-      await this.commitTranscript();
-      await this.ensureQuestionReady();
-      const questionRuntime = this.requireQuestionRuntime();
-      const model = await questionRuntime.getSelectedModel();
-      const askedAt = this.timeStamp(new Date());
-      let answer = "";
-      let pendingAnswerDelta = "";
-      let answerDeltaTimer: NodeJS.Timeout | null = null;
-      await this.logEvent("ask_started", {
-        question,
-        model,
-        committedTranscriptSegments: this.transcriptSegments.length,
-        hadPartialTranscript: Boolean(this.partialTranscript.trim()),
-      });
+      if (this.stopping || this.stopped) {
+        throw new Error("Session is stopping.");
+      }
 
-      const context = buildQuestionTurnContext(this.buildSharedMeetingSnapshot());
-      const text = await questionRuntime.runQuestion(question, context, (delta) => {
-        answer += delta;
-        pendingAnswerDelta += delta;
-        if (answerDeltaTimer === null) {
-          answerDeltaTimer = setTimeout(() => {
-            this.emitEvent({ type: "answer_delta", delta: pendingAnswerDelta });
-            pendingAnswerDelta = "";
-            answerDeltaTimer = null;
-          }, 120);
+      try {
+        await this.commitTranscript();
+        await this.ensureQuestionReady();
+        const questionRuntime = this.requireQuestionRuntime();
+        const model = await questionRuntime.getSelectedModel();
+        const askedAt = this.timeStamp(new Date());
+        let answer = "";
+        let pendingAnswerDelta = "";
+        let answerDeltaTimer: NodeJS.Timeout | null = null;
+        await this.logEvent("ask_started", {
+          question,
+          model,
+          committedTranscriptSegments: this.transcriptSegments.length,
+          hadPartialTranscript: Boolean(this.partialTranscript.trim()),
+        });
+
+        const context = buildQuestionTurnContext(this.buildSharedMeetingSnapshot());
+        const text = await questionRuntime.runQuestion(question, context, (delta) => {
+          answer += delta;
+          pendingAnswerDelta += delta;
+          if (answerDeltaTimer === null) {
+            answerDeltaTimer = setTimeout(() => {
+              this.emitEvent({ type: "answer_delta", delta: pendingAnswerDelta });
+              pendingAnswerDelta = "";
+              answerDeltaTimer = null;
+            }, 120);
+          }
+        });
+
+        if (answerDeltaTimer !== null) {
+          clearTimeout(answerDeltaTimer);
         }
-      });
+        if (pendingAnswerDelta) {
+          this.emitEvent({ type: "answer_delta", delta: pendingAnswerDelta });
+        }
 
-      if (answerDeltaTimer !== null) {
-        clearTimeout(answerDeltaTimer);
+        answer = text || answer;
+        this.questionAnswers.unshift({
+          question,
+          answer,
+          askedAt,
+        });
+
+        await this.writeNote();
+        await this.logEvent("ask_completed", {
+          question,
+          answer,
+        });
+        this.emitEvent({ type: "answer_done", text: answer });
+        this.emitEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
+      } catch (error) {
+        throw error;
       }
-      if (pendingAnswerDelta) {
-        this.emitEvent({ type: "answer_delta", delta: pendingAnswerDelta });
-      }
-
-      answer = text || answer;
-      this.questionAnswers.unshift({
-        question,
-        answer,
-        askedAt,
-      });
-
-      await this.writeNote();
-      await this.logEvent("ask_completed", {
-        question,
-        answer,
-      });
-      this.emitEvent({ type: "answer_done", text: answer });
-      this.emitEvent({ type: "notes_updated", markdown: this.currentMarkdown() });
-    }).finally(() => {
-      this.pendingAskCount = Math.max(0, this.pendingAskCount - 1);
-      this.maybeScheduleBuddyTurnLoop();
     });
 
     this.askQueue = runAsk.catch(() => undefined);
@@ -396,7 +403,7 @@ export class MeetingSession {
   }
 
   async resume() {
-    if (this.stopped || !this.paused) {
+    if (this.stopping || this.stopped || !this.paused) {
       return;
     }
 
@@ -437,46 +444,60 @@ export class MeetingSession {
   }
 
   async stop() {
-    this.stopping = true;
-    this.resumePending = false;
-    await this.pausePromise;
-
-    if (this.audioQueue.length > 0 && (this.paused || this.bridgeConnecting || !this.bridgeReady)) {
-      this.paused = false;
-      this.emitEvent({
-        type: "status",
-        message: "Finalizing buffered audio before stopping...",
-      });
-      await this.logEvent("stop_flushing_buffered_audio", {
-        bufferedAudioChunks: this.audioQueue.length,
-      });
-      this.ensureElevenLabsConnected();
-      try {
-        await this.waitForBridgeReady();
-        await this.commitTranscript();
-      } catch (error) {
-        await this.logEvent("stop_buffered_audio_unavailable", {
-          bufferedAudioChunks: this.audioQueue.length,
-          message: String(error),
-        });
-        this.emitEvent({
-          type: "status",
-          message: "Could not finalize the last buffered audio before stopping.",
-        });
-      }
+    if (this.stopPromise) {
+      return await this.stopPromise;
     }
 
-    this.stopped = true;
-    await this.commitTranscript();
-    this.closeElevenLabs();
-    await Promise.all([this.buddyRuntime?.close(), this.qaRuntime?.close()]);
-    await this.writeNote();
-    await this.logEvent("session_stopped", {
-      transcriptSegments: this.transcriptSegments.length,
-      questionsAnswered: this.questionAnswers.length,
-      audioChunksReceived: this.audioChunkCount,
-    });
-    this.emitEvent({ type: "session_stopped" });
+    this.stopPromise = (async () => {
+      this.stopping = true;
+      this.resumePending = false;
+      this.clearBuddyTurnTimer();
+      this.pendingBuddyTranscriptSegments.length = 0;
+      await this.pausePromise;
+
+      if (this.audioQueue.length > 0 && (this.paused || this.bridgeConnecting || !this.bridgeReady)) {
+        this.paused = false;
+        this.emitEvent({
+          type: "status",
+          message: "Finalizing buffered audio before stopping...",
+        });
+        await this.logEvent("stop_flushing_buffered_audio", {
+          bufferedAudioChunks: this.audioQueue.length,
+        });
+        this.ensureElevenLabsConnected();
+        try {
+          await this.waitForBridgeReady();
+          await this.commitTranscript();
+        } catch (error) {
+          await this.logEvent("stop_buffered_audio_unavailable", {
+            bufferedAudioChunks: this.audioQueue.length,
+            message: String(error),
+          });
+          this.emitEvent({
+            type: "status",
+            message: "Could not finalize the last buffered audio before stopping.",
+          });
+        }
+      }
+
+      await this.commitTranscript();
+      this.closeElevenLabs();
+      await Promise.allSettled(
+        [this.buddyRuntime?.close(), this.qaRuntime?.close()].filter(
+          (promise): promise is Promise<void> => promise !== null && promise !== undefined
+        )
+      );
+      this.stopped = true;
+      await this.writeNote();
+      await this.logEvent("session_stopped", {
+        transcriptSegments: this.transcriptSegments.length,
+        questionsAnswered: this.questionAnswers.length,
+        audioChunksReceived: this.audioChunkCount,
+      });
+      this.emitEvent({ type: "session_stopped" });
+    })();
+
+    return await this.stopPromise;
   }
 
   private async handleCommittedTranscript(text: string) {
@@ -644,7 +665,7 @@ export class MeetingSession {
           const model = await buddyRuntime.getSelectedModel();
           await this.logBuddyPrimingResult(model, result);
           this.buddyModel = model;
-          if (this.stopped) {
+          if (this.stopping || this.stopped) {
             return;
           }
 
@@ -659,7 +680,7 @@ export class MeetingSession {
           });
         } catch (error) {
           this.buddyUnavailableMessage = `Buddy unavailable: ${String(error)}`;
-          if (this.stopped) {
+          if (this.stopping || this.stopped) {
             return;
           }
 
@@ -733,6 +754,10 @@ export class MeetingSession {
           this.questionReady = true;
           this.questionModel = model;
           this.questionWarmupFailedMessage = "";
+          if (this.stopping || this.stopped) {
+            return;
+          }
+
           await this.logEvent("codex_ready", {
             lane: "qa",
             model,
@@ -935,7 +960,7 @@ export class MeetingSession {
           recoveredQueuedChunks: recoveredChunks.length,
         });
 
-        if (intentional || this.stopped || this.paused) {
+        if (intentional || this.stopping || this.stopped || this.paused) {
           return;
         }
 
@@ -1080,7 +1105,7 @@ export class MeetingSession {
   }
 
   private enqueueBuddyTranscriptSegment(segment: TranscriptSegment) {
-    if (this.stopped || this.buddyUnavailableMessage) {
+    if (this.stopping || this.stopped || this.buddyUnavailableMessage) {
       return;
     }
 
@@ -1095,25 +1120,25 @@ export class MeetingSession {
 
     this.buddyTurnLoopPromise = (async () => {
       while (
+        !this.stopping &&
         !this.stopped &&
-        !this.hasPendingAsk() &&
         this.pendingBuddyTranscriptSegments.length > 0
       ) {
         const segments = this.pendingBuddyTranscriptSegments.splice(0);
         try {
           await this.processBuddyTranscriptSegments(segments);
         } catch (error) {
+          if (this.stopping || this.stopped) {
+            return;
+          }
+
           await this.logEvent("buddy_transcript_turn_failed", {
             segmentCount: segments.length,
             message: String(error),
           });
         }
 
-        if (this.hasPendingAsk()) {
-          break;
-        }
-
-        if (this.pendingBuddyTranscriptSegments.length > 0) {
+        if (!this.stopping && !this.stopped && this.pendingBuddyTranscriptSegments.length > 0) {
           await this.sleep(BUDDY_TRANSCRIPT_BATCH_WINDOW_MS);
         }
       }
@@ -1126,7 +1151,7 @@ export class MeetingSession {
   }
 
   private async processBuddyTranscriptSegments(segments: TranscriptSegment[]) {
-    if (segments.length === 0 || this.stopped) {
+    if (segments.length === 0 || this.stopping || this.stopped) {
       return;
     }
 
@@ -1143,7 +1168,7 @@ export class MeetingSession {
       return;
     }
 
-    if (!response.shouldSurface || response.type === "noop" || this.stopped) {
+    if (!response.shouldSurface || response.type === "noop" || this.stopping || this.stopped) {
       await this.logEvent("buddy_transcript_turn_noop", {
         segmentCount: segments.length,
         firstCommittedAt: segments[0]?.committedAt ?? "unknown",
@@ -1200,15 +1225,11 @@ export class MeetingSession {
     await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  private hasPendingAsk() {
-    return this.pendingAskCount > 0;
-  }
-
   private maybeScheduleBuddyTurnLoop(delayMs = BUDDY_TRANSCRIPT_BATCH_WINDOW_MS) {
     if (
+      this.stopping ||
       this.stopped ||
       this.buddyUnavailableMessage ||
-      this.hasPendingAsk() ||
       this.pendingBuddyTranscriptSegments.length === 0 ||
       this.buddyTurnLoopPromise ||
       this.buddyTurnTimer

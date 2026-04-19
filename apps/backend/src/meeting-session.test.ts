@@ -6,13 +6,14 @@ import test from "node:test";
 
 import type { ServerEvent } from "@realtimebuddy/shared/protocol";
 
+import type { BuddyParseResult } from "./buddy-contract";
 import { MeetingSession } from "./meeting-session";
 import {
   DEFAULT_REALTIMEBUDDY_HOME,
   resolveConfiguredPath,
 } from "./persistent-config";
 
-function createBuddyResult() {
+function createBuddyResult(): BuddyParseResult {
   return {
     ok: true as const,
     response: {
@@ -24,6 +25,21 @@ function createBuddyResult() {
     },
     rawText:
       '{"shouldSurface":false,"type":"noop","title":"","body":"","suggestedQuestion":null}',
+  };
+}
+
+function createSurfacedBuddyResult(): BuddyParseResult {
+  return {
+    ok: true as const,
+    response: {
+      shouldSurface: true,
+      type: "needs_owner" as const,
+      title: "Assign an owner",
+      body: "Pick a single owner before closing the meeting.",
+      suggestedQuestion: "Who owns this next?",
+    },
+    rawText:
+      '{"shouldSurface":true,"type":"needs_owner","title":"Assign an owner","body":"Pick a single owner before closing the meeting.","suggestedQuestion":"Who owns this next?"}',
   };
 }
 
@@ -405,9 +421,9 @@ test("MeetingSession Buddy startup failure does not block Q&A and emits Buddy-on
   }
 });
 
-test("MeetingSession keeps Buddy transcript work paused while a question is in flight", async () => {
+test("MeetingSession lets Buddy transcript work run while a question is in flight", async () => {
   const previousBasePath = process.env.REALTIMEBUDDY_BASE_PATH;
-  process.env.REALTIMEBUDDY_BASE_PATH = "/tmp/realtimebuddy-ask-gating";
+  process.env.REALTIMEBUDDY_BASE_PATH = "/tmp/realtimebuddy-ask-concurrency";
 
   const timeline: string[] = [];
   let resolveQuestion: ((value: string) => void) | null = null;
@@ -474,28 +490,328 @@ test("MeetingSession keeps Buddy transcript work paused while a question is in f
 
     ((session as unknown) as {
       enqueueBuddyTranscriptSegment: (segment: { text: string; committedAt: string }) => void;
+      clearBuddyTurnTimer: () => void;
       maybeScheduleBuddyTurnLoop: (delayMs?: number) => void;
     }).enqueueBuddyTranscriptSegment({
       text: "We should assign the rollout owner.",
       committedAt: "10:15:00",
     });
-    ((session as unknown) as { maybeScheduleBuddyTurnLoop: (delayMs?: number) => void }).maybeScheduleBuddyTurnLoop(0);
+    ((session as unknown) as {
+      clearBuddyTurnTimer: () => void;
+      maybeScheduleBuddyTurnLoop: (delayMs?: number) => void;
+    }).clearBuddyTurnTimer();
+    ((session as unknown) as {
+      maybeScheduleBuddyTurnLoop: (delayMs?: number) => void;
+    }).maybeScheduleBuddyTurnLoop(0);
 
-    await sleep(50);
-    assert.ok(!timeline.includes("buddy:turn"));
+    await waitForEvent(timeline, "buddy:turn");
+    assert.ok(
+      !timeline.includes("qa:end"),
+      `Expected Buddy turn to start before the question finished, got timeline: ${timeline.join(", ")}`
+    );
 
-    resolveQuestion!("Queued answer");
+    resolveQuestion!("Concurrent answer");
     await askPromise;
 
-    await ((session as unknown) as { runBuddyTranscriptLoop: () => Promise<void> }).runBuddyTranscriptLoop();
-    await waitForEvent(timeline, "buddy:turn");
-
     assert.ok(
-      timeline.indexOf("event:answer_done") < timeline.indexOf("buddy:turn"),
-      `Expected Buddy turn to stay paused until the question finished, got timeline: ${timeline.join(", ")}`
+      timeline.indexOf("buddy:turn") < timeline.indexOf("event:answer_done"),
+      `Expected Buddy turn to run before answer_done, got timeline: ${timeline.join(", ")}`
     );
 
     await session.stop();
+  } finally {
+    if (previousBasePath === undefined) {
+      delete process.env.REALTIMEBUDDY_BASE_PATH;
+    } else {
+      process.env.REALTIMEBUDDY_BASE_PATH = previousBasePath;
+    }
+  }
+});
+
+test("MeetingSession stop drops scheduled Buddy transcript work that has not started yet", async () => {
+  const previousBasePath = process.env.REALTIMEBUDDY_BASE_PATH;
+  process.env.REALTIMEBUDDY_BASE_PATH = "/tmp/realtimebuddy-stop-scheduled-buddy";
+
+  const timeline: string[] = [];
+  const events: ServerEvent[] = [];
+
+  try {
+    const session = new MeetingSession({
+      sampleRate: 48_000,
+      title: "Stop scheduled Buddy",
+      includeTabAudio: false,
+      languagePreference: "english",
+      sendEvent: (event) => {
+        timeline.push(`event:${event.type}`);
+        events.push(event);
+      },
+      createCodexAppServer: createClientFactory([
+        () => ({
+          ready: async () => undefined,
+          getSelectedModel: async () => "buddy-model",
+          askBuddy: async (prompt) => {
+            if (prompt.includes("silent setup turn")) {
+              timeline.push("buddy:prime");
+              return createBuddyResult();
+            }
+
+            timeline.push("buddy:turn");
+            return createSurfacedBuddyResult();
+          },
+          askQuestion: async () => {
+            throw new Error("Buddy client should not answer questions.");
+          },
+          close: () => undefined,
+        }),
+        () => ({
+          ready: async () => undefined,
+          getSelectedModel: async () => "qa-model",
+          askBuddy: async () => {
+            throw new Error("Q&A client should not handle Buddy turns.");
+          },
+          askQuestion: async (question) => {
+            if (question.includes("silent setup turn")) {
+              return "READY";
+            }
+
+            return "Answer";
+          },
+          close: () => undefined,
+        }),
+      ]),
+    });
+
+    ((session as unknown) as { ensureElevenLabsConnected: () => void }).ensureElevenLabsConnected =
+      () => undefined;
+
+    await session.start();
+    await waitForEvent(timeline, "event:buddy_ready");
+
+    ((session as unknown) as {
+      enqueueBuddyTranscriptSegment: (segment: { text: string; committedAt: string }) => void;
+      clearBuddyTurnTimer: () => void;
+      maybeScheduleBuddyTurnLoop: (delayMs?: number) => void;
+    }).enqueueBuddyTranscriptSegment({
+      text: "We should assign the rollout owner.",
+      committedAt: "10:15:00",
+    });
+    ((session as unknown) as {
+      clearBuddyTurnTimer: () => void;
+      maybeScheduleBuddyTurnLoop: (delayMs?: number) => void;
+    }).clearBuddyTurnTimer();
+    ((session as unknown) as {
+      maybeScheduleBuddyTurnLoop: (delayMs?: number) => void;
+    }).maybeScheduleBuddyTurnLoop(30);
+
+    await session.stop();
+    await sleep(80);
+
+    assert.ok(!timeline.includes("buddy:turn"), `Expected scheduled Buddy work to be dropped, got timeline: ${timeline.join(", ")}`);
+    assert.equal(events.filter((event) => event.type === "buddy_event").length, 0);
+  } finally {
+    if (previousBasePath === undefined) {
+      delete process.env.REALTIMEBUDDY_BASE_PATH;
+    } else {
+      process.env.REALTIMEBUDDY_BASE_PATH = previousBasePath;
+    }
+  }
+});
+
+test("MeetingSession still buffers audio that arrives while stop is in progress", async () => {
+  const previousBasePath = process.env.REALTIMEBUDDY_BASE_PATH;
+  process.env.REALTIMEBUDDY_BASE_PATH = "/tmp/realtimebuddy-stop-buffer-audio";
+
+  let resolvePause: (() => void) | null = null;
+  const pausePromise = new Promise<void>((resolve) => {
+    resolvePause = resolve;
+  });
+
+  try {
+    const session = new MeetingSession({
+      sampleRate: 48_000,
+      title: "Stop buffer audio",
+      includeTabAudio: false,
+      languagePreference: "english",
+      sendEvent: () => undefined,
+      createCodexAppServer: createClientFactory([
+        () => ({
+          ready: async () => undefined,
+          getSelectedModel: async () => "buddy-model",
+          askBuddy: async () => createBuddyResult(),
+          askQuestion: async () => {
+            throw new Error("Buddy client should not answer questions.");
+          },
+          close: () => undefined,
+        }),
+        () => ({
+          ready: async () => undefined,
+          getSelectedModel: async () => "qa-model",
+          askBuddy: async () => {
+            throw new Error("Q&A client should not handle Buddy turns.");
+          },
+          askQuestion: async (question) => {
+            if (question.includes("silent setup turn")) {
+              return "READY";
+            }
+
+            return "Answer";
+          },
+          close: () => undefined,
+        }),
+      ]),
+    });
+
+    ((session as unknown) as { ensureElevenLabsConnected: () => void }).ensureElevenLabsConnected =
+      () => undefined;
+    ((session as unknown) as { pausePromise: Promise<void> | null }).pausePromise = pausePromise;
+    ((session as unknown) as { bridgeReady: boolean }).bridgeReady = true;
+
+    await session.start();
+
+    const stopPromise = session.stop();
+    await sleep(10);
+
+    session.pushAudioChunk({
+      pcmBase64: "tail-audio",
+      sampleRate: 48_000,
+    });
+
+    assert.equal(
+      ((session as unknown) as { audioQueue: Array<{ pcmBase64: string }> }).audioQueue.length,
+      1
+    );
+
+    resolvePause!();
+    await stopPromise;
+  } finally {
+    if (previousBasePath === undefined) {
+      delete process.env.REALTIMEBUDDY_BASE_PATH;
+    } else {
+      process.env.REALTIMEBUDDY_BASE_PATH = previousBasePath;
+    }
+  }
+});
+
+test("MeetingSession stop cancels in-flight Codex turns promptly, rejects queued asks, and suppresses late Buddy cards", async () => {
+  const previousBasePath = process.env.REALTIMEBUDDY_BASE_PATH;
+  process.env.REALTIMEBUDDY_BASE_PATH = "/tmp/realtimebuddy-stop-concurrency";
+
+  const timeline: string[] = [];
+  const events: ServerEvent[] = [];
+  let rejectQuestion: ((error: Error) => void) | null = null;
+  let rejectBuddyTurn: ((error: Error) => void) | null = null;
+  const questionDone = new Promise<string>((_resolve, reject) => {
+    rejectQuestion = reject;
+  });
+  const buddyTurnDone = new Promise<void>((_resolve, reject) => {
+    rejectBuddyTurn = reject;
+  });
+
+  try {
+    const session = new MeetingSession({
+      sampleRate: 48_000,
+      title: "Stop concurrency",
+      includeTabAudio: false,
+      languagePreference: "english",
+      sendEvent: (event) => {
+        timeline.push(`event:${event.type}`);
+        events.push(event);
+      },
+      createCodexAppServer: createClientFactory([
+        () => ({
+          ready: async () => undefined,
+          getSelectedModel: async () => "buddy-model",
+          askBuddy: async (prompt) => {
+            if (prompt.includes("silent setup turn")) {
+              timeline.push("buddy:prime");
+              return createBuddyResult();
+            }
+
+            timeline.push("buddy:turn:start");
+            await buddyTurnDone;
+            timeline.push("buddy:turn:end");
+            return createSurfacedBuddyResult();
+          },
+          askQuestion: async () => {
+            throw new Error("Buddy client should not answer questions.");
+          },
+          close: () => undefined,
+        }),
+        () => ({
+          ready: async () => undefined,
+          getSelectedModel: async () => "qa-model",
+          askBuddy: async () => {
+            throw new Error("Q&A client should not handle Buddy turns.");
+          },
+          askQuestion: async (question) => {
+            if (question.includes("silent setup turn")) {
+              return "READY";
+            }
+
+            timeline.push("qa:start:1");
+            const answer = await questionDone;
+            timeline.push("qa:end:1");
+            return answer;
+          },
+          close: () => {
+            rejectQuestion?.(new Error("Codex app-server closed."));
+          },
+        }),
+      ]),
+    });
+
+    ((session as unknown) as { ensureElevenLabsConnected: () => void }).ensureElevenLabsConnected =
+      () => undefined;
+
+    await session.start();
+    await waitForEvent(timeline, "event:buddy_ready");
+
+    const firstAskPromise = session.ask("What is the next step?");
+    await waitForEvent(timeline, "qa:start:1");
+
+    ((session as unknown) as {
+      enqueueBuddyTranscriptSegment: (segment: { text: string; committedAt: string }) => void;
+      clearBuddyTurnTimer: () => void;
+      maybeScheduleBuddyTurnLoop: (delayMs?: number) => void;
+    }).enqueueBuddyTranscriptSegment({
+      text: "We should assign the rollout owner.",
+      committedAt: "10:15:00",
+    });
+    ((session as unknown) as {
+      clearBuddyTurnTimer: () => void;
+      maybeScheduleBuddyTurnLoop: (delayMs?: number) => void;
+    }).clearBuddyTurnTimer();
+    ((session as unknown) as {
+      maybeScheduleBuddyTurnLoop: (delayMs?: number) => void;
+    }).maybeScheduleBuddyTurnLoop(0);
+    await waitForEvent(timeline, "buddy:turn:start");
+
+    const queuedAskPromise = session.ask("What happens after this?");
+    const stopPromise = session.stop();
+    await stopPromise;
+
+    assert.equal(
+      events.filter((event) => event.type === "buddy_event").length,
+      0,
+      `Expected late Buddy cards to be suppressed during stop, got timeline: ${timeline.join(", ")}`
+    );
+    await assert.rejects(queuedAskPromise, /Session is stopping\./);
+
+    assert.ok(
+      timeline.includes("event:session_stopped"),
+      `Expected session_stopped during stop, got timeline: ${timeline.join(", ")}`
+    );
+    assert.equal(
+      events.filter((event) => event.type === "buddy_event").length,
+      0,
+      `Expected no Buddy cards to surface during stop, got timeline: ${timeline.join(", ")}`
+    );
+    assert.ok(!timeline.includes("event:answer_done"));
+    await assert.rejects(firstAskPromise, /Codex app-server closed\./);
+
+    const snapshot = session.getSnapshot();
+    assert.equal(snapshot.buddyEvents.length, 0);
+    assert.equal(snapshot.questionAnswers.length, 0);
   } finally {
     if (previousBasePath === undefined) {
       delete process.env.REALTIMEBUDDY_BASE_PATH;
@@ -661,7 +977,7 @@ function createClientFactory(
   factories: Array<(options: { developerInstructions: string; workingDirectory: string }) => {
     ready: () => Promise<void>;
     getSelectedModel: () => Promise<string>;
-    askBuddy: (prompt: string) => Promise<ReturnType<typeof createBuddyResult>>;
+    askBuddy: (prompt: string) => Promise<BuddyParseResult>;
     askQuestion: (
       question: string,
       context: string,
