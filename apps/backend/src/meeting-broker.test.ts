@@ -219,14 +219,14 @@ test("MeetingBroker forwards optional Buddy seed layers when starting a session"
         title: "Seeded session",
         includeTabAudio: false,
         languagePreference: "english",
-        staticUserSeed: "Ratul prefers concise cards.",
+        staticUserSeed: "User prefers concise cards.",
         meetingSeed: "Goal: leave with a pilot owner.",
       })
     )
   );
   await flushAsyncWork();
 
-  assert.equal(receivedOptions?.staticUserSeed, "Ratul prefers concise cards.");
+  assert.equal(receivedOptions?.staticUserSeed, "User prefers concise cards.");
   assert.equal(receivedOptions?.meetingSeed, "Goal: leave with a pilot owner.");
 });
 

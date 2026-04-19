@@ -43,13 +43,13 @@ test("writePersistentConfig round-trips staticUserSeed", async () => {
 
   await writePersistentConfig(
     {
-      staticUserSeed: "Ratul likes concise prompts.",
+      staticUserSeed: "User likes concise prompts.",
     },
     configPath
   );
 
   assert.deepEqual(await readPersistentConfig(configPath), {
-    staticUserSeed: "Ratul likes concise prompts.",
+    staticUserSeed: "User likes concise prompts.",
   });
 
   const raw = await readFile(configPath, "utf8");
