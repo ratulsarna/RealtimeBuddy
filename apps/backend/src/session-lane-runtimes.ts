@@ -1,10 +1,12 @@
-import type { SessionLanguagePreference } from "@realtimebuddy/shared/language-preferences";
-
 import {
   buildBuddyPrimingPrompt,
   buildBuddyTurnPrompt,
   type BuddyParseResult,
 } from "./buddy-contract";
+import {
+  buildQuestionLaneSetupContext,
+  buildQuestionLaneSetupQuestion,
+} from "./question-contract";
 import type { CodexAppServer } from "./codex-app-server";
 
 export type CodexSessionClient = Pick<
@@ -17,31 +19,20 @@ export type CreateCodexAppServer = (options: {
   workingDirectory: string;
 }) => CodexSessionClient;
 
-export type BuddyLaneStartupContext = {
-  includeTabAudio: boolean;
-  languagePreference: SessionLanguagePreference;
-  meetingSeed: string;
-  meetingTitle: string;
-  staticUserSeed: string;
-  workingDirectory: string;
-};
-
-export type QuestionLaneStartupContext = BuddyLaneStartupContext;
-
 export type BuddyLaneTurnInput = {
   trigger: string;
   context: string;
 };
 
 export type BuddyLaneRuntime = {
-  initialize: (context: BuddyLaneStartupContext) => Promise<BuddyParseResult>;
+  initialize: () => Promise<BuddyParseResult>;
   getSelectedModel: () => Promise<string>;
   runBuddyTurn: (input: BuddyLaneTurnInput) => Promise<BuddyParseResult>;
   close: () => Promise<void>;
 };
 
 export type QuestionLaneRuntime = {
-  initialize: (context: QuestionLaneStartupContext) => Promise<void>;
+  initialize: () => Promise<void>;
   getSelectedModel: () => Promise<string>;
   runQuestion: (
     question: string,
@@ -54,6 +45,13 @@ export type QuestionLaneRuntime = {
 type SessionLaneRuntimeOptions = {
   createCodexAppServer: CreateCodexAppServer;
   developerInstructions: string;
+  workingDirectory: string;
+};
+
+type CreateSessionLaneRuntimeOptions = {
+  buddyDeveloperInstructions: string;
+  createCodexAppServer: CreateCodexAppServer;
+  questionDeveloperInstructions: string;
   workingDirectory: string;
 };
 
@@ -146,18 +144,9 @@ class DefaultBuddyLaneRuntime implements BuddyLaneRuntime {
     this.runtime = new LazyCodexLaneClient(options);
   }
 
-  async initialize(context: BuddyLaneStartupContext) {
+  async initialize() {
     if (!this.initializedPromise) {
-      this.initializedPromise = this.runtime.askBuddy(
-        buildBuddyPrimingPrompt({
-          includeTabAudio: context.includeTabAudio,
-          languagePreference: context.languagePreference,
-          meetingSeed: context.meetingSeed,
-          meetingTitle: context.meetingTitle,
-          staticUserSeed: context.staticUserSeed,
-          workingDirectory: context.workingDirectory,
-        })
-      );
+      this.initializedPromise = this.runtime.askBuddy(buildBuddyPrimingPrompt());
     }
 
     return await this.initializedPromise;
@@ -193,12 +182,12 @@ class DefaultQuestionLaneRuntime implements QuestionLaneRuntime {
     this.runtime = new LazyCodexLaneClient(options);
   }
 
-  async initialize(context: QuestionLaneStartupContext) {
+  async initialize() {
     if (!this.initializedPromise) {
       const initialization = this.runtime
         .askQuestion(
-          "This is a silent setup turn for the dedicated Q&A lane. Absorb the meeting startup context for future questions in this meeting and reply with READY only.",
-          buildQuestionLaneStartupContext(context),
+          buildQuestionLaneSetupQuestion(),
+          buildQuestionLaneSetupContext(),
           () => undefined
         )
         .then(() => undefined)
@@ -242,26 +231,35 @@ export function createSessionLaneRuntimes(options: SessionLaneRuntimeOptions): {
   qaRuntime: QuestionLaneRuntime;
 } {
   return {
-    buddyRuntime: new DefaultBuddyLaneRuntime(options),
-    qaRuntime: new DefaultQuestionLaneRuntime(options),
+    buddyRuntime: createBuddyLaneRuntime(options),
+    qaRuntime: createQuestionLaneRuntime(options),
   };
 }
 
-function buildQuestionLaneStartupContext(context: QuestionLaneStartupContext) {
-  const staticSeed = context.staticUserSeed || "None provided.";
-  const meetingSeed = context.meetingSeed || "None provided.";
+export function createBuddyLaneRuntime(options: SessionLaneRuntimeOptions): BuddyLaneRuntime {
+  return new DefaultBuddyLaneRuntime(options);
+}
 
-  return [
-    "Meeting startup context for the dedicated Q&A lane:",
-    `- Meeting title: ${context.meetingTitle}`,
-    `- Audio sources: microphone${context.includeTabAudio ? " + tab audio" : ""}`,
-    `- Preferred transcription language: ${context.languagePreference}`,
-    `- Working directory: ${context.workingDirectory}`,
-    "",
-    "Static user seed:",
-    staticSeed,
-    "",
-    "Dynamic meeting seed:",
-    meetingSeed,
-  ].join("\n");
+export function createQuestionLaneRuntime(options: SessionLaneRuntimeOptions): QuestionLaneRuntime {
+  return new DefaultQuestionLaneRuntime(options);
+}
+
+export function createSessionLaneRuntimesWithInstructions(
+  options: CreateSessionLaneRuntimeOptions
+): {
+  buddyRuntime: BuddyLaneRuntime;
+  qaRuntime: QuestionLaneRuntime;
+} {
+  return {
+    buddyRuntime: createBuddyLaneRuntime({
+      createCodexAppServer: options.createCodexAppServer,
+      developerInstructions: options.buddyDeveloperInstructions,
+      workingDirectory: options.workingDirectory,
+    }),
+    qaRuntime: createQuestionLaneRuntime({
+      createCodexAppServer: options.createCodexAppServer,
+      developerInstructions: options.questionDeveloperInstructions,
+      workingDirectory: options.workingDirectory,
+    }),
+  };
 }

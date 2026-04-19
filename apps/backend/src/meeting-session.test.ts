@@ -98,6 +98,8 @@ test("MeetingSession primes Buddy before emitting buddy_ready and reports the Bu
   const timeline: string[] = [];
   const events: ServerEvent[] = [];
   let primingPrompt = "";
+  let buddyDeveloperInstructions = "";
+  let qaDeveloperInstructions = "";
 
   try {
     const session = new MeetingSession({
@@ -112,7 +114,10 @@ test("MeetingSession primes Buddy before emitting buddy_ready and reports the Bu
         events.push(event);
       },
       createCodexAppServer: createClientFactory([
-        () => ({
+        ({ developerInstructions }) => {
+          buddyDeveloperInstructions = developerInstructions;
+
+          return {
           ready: async () => {
             timeline.push("buddy:ready");
           },
@@ -129,7 +134,30 @@ test("MeetingSession primes Buddy before emitting buddy_ready and reports the Bu
             throw new Error("Buddy client should not answer questions during startup.");
           },
           close: () => undefined,
-        }),
+        };
+        },
+        ({ developerInstructions }) => {
+          qaDeveloperInstructions = developerInstructions;
+
+          return {
+          ready: async () => {
+            timeline.push("qa:ready");
+          },
+          getSelectedModel: async () => "qa-model",
+          askBuddy: async () => {
+            throw new Error("Q&A client should not handle Buddy turns.");
+          },
+          askQuestion: async (question) => {
+            if (question.includes("silent setup turn")) {
+              timeline.push("qa:prime");
+              return "READY";
+            }
+
+            throw new Error("Q&A client should not answer user questions in this test.");
+          },
+          close: () => undefined,
+        };
+        },
       ]),
     });
 
@@ -142,12 +170,18 @@ test("MeetingSession primes Buddy before emitting buddy_ready and reports the Bu
     const buddyReadyEvent = events.find((event) => event.type === "buddy_ready");
     const snapshot = session.getSnapshot();
 
-    assert.match(primingPrompt, /Meeting title: Design Sync/);
-    assert.match(primingPrompt, /Static user seed:/);
-    assert.match(primingPrompt, /Prefer concise prompts\./);
-    assert.match(primingPrompt, /Dynamic meeting seed:/);
-    assert.match(primingPrompt, /Land on a rollout owner\./);
+    assert.match(buddyDeveloperInstructions, /Standing context:/);
+    assert.match(buddyDeveloperInstructions, /Prefer concise prompts\./);
+    assert.match(buddyDeveloperInstructions, /Meeting brief:/);
+    assert.match(buddyDeveloperInstructions, /Land on a rollout owner\./);
+    assert.match(qaDeveloperInstructions, /Standing context:/);
+    assert.match(qaDeveloperInstructions, /Prefer concise prompts\./);
+    assert.match(qaDeveloperInstructions, /Meeting brief:/);
+    assert.match(qaDeveloperInstructions, /Land on a rollout owner\./);
+    assert.match(primingPrompt, /silent setup turn/);
     assert.match(primingPrompt, /Return the required Buddy no-op JSON object only\./);
+    assert.doesNotMatch(primingPrompt, /Standing context:/);
+    assert.doesNotMatch(primingPrompt, /Meeting brief:/);
     assert.ok(
       timeline.indexOf("buddy:ask") < timeline.indexOf("event:buddy_ready"),
       `Expected priming before buddy_ready, got timeline: ${timeline.join(", ")}`
@@ -168,17 +202,22 @@ test("MeetingSession primes Buddy before emitting buddy_ready and reports the Bu
   }
 });
 
-test("MeetingSession asks no longer wait for Buddy priming and reuse one Q&A runtime across follow-ups", async () => {
+test("MeetingSession eagerly warms Q&A on start, waits for in-flight warmup, and reuses one Q&A runtime across follow-ups", async () => {
   const previousBasePath = process.env.REALTIMEBUDDY_BASE_PATH;
   process.env.REALTIMEBUDDY_BASE_PATH = "/tmp/realtimebuddy-qa-followups";
 
   const timeline: string[] = [];
   const events: ServerEvent[] = [];
+  const startupContexts: string[] = [];
   const questionContexts: string[] = [];
   let answeredQuestionCalls = 0;
-  let resolvePriming: (() => void) | null = null;
-  const primingReady = new Promise<void>((resolve) => {
-    resolvePriming = resolve;
+  let resolveBuddyPriming: (() => void) | null = null;
+  let resolveQaPriming: (() => void) | null = null;
+  const buddyPrimingReady = new Promise<void>((resolve) => {
+    resolveBuddyPriming = resolve;
+  });
+  const qaPrimingReady = new Promise<void>((resolve) => {
+    resolveQaPriming = resolve;
   });
 
   try {
@@ -204,7 +243,7 @@ test("MeetingSession asks no longer wait for Buddy priming and reuse one Q&A run
           },
           askBuddy: async () => {
             timeline.push("buddy:prime");
-            await primingReady;
+            await buddyPrimingReady;
             return createBuddyResult();
           },
           askQuestion: async () => {
@@ -223,12 +262,14 @@ test("MeetingSession asks no longer wait for Buddy priming and reuse one Q&A run
           askQuestion: async (question, context) => {
             if (question.includes("silent setup turn")) {
               timeline.push("qa:prime");
-              questionContexts.push(context);
+              startupContexts.push(context);
+              await qaPrimingReady;
               return "READY";
             }
 
             answeredQuestionCalls += 1;
             timeline.push(`qa:ask:${answeredQuestionCalls}`);
+            questionContexts.push(context);
             return `answer-${answeredQuestionCalls}`;
           },
           close: () => undefined,
@@ -240,14 +281,18 @@ test("MeetingSession asks no longer wait for Buddy priming and reuse one Q&A run
       () => undefined;
 
     await session.start();
+    await waitForEvent(timeline, "qa:prime");
     const firstAskPromise = session.ask("What should I ask next?");
-    await waitForEvent(timeline, "event:answer_done");
 
     assert.ok(timeline.includes("qa:prime"));
-    assert.ok(timeline.includes("qa:ask:1"));
+    assert.ok(!timeline.includes("qa:ask:1"));
     assert.ok(!timeline.includes("event:buddy_ready"));
 
-    resolvePriming!();
+    resolveQaPriming!();
+    await waitForEvent(timeline, "qa:ask:1");
+    await waitForEvent(timeline, "event:answer_done");
+
+    resolveBuddyPriming!();
     await firstAskPromise;
     await waitForEvent(timeline, "event:buddy_ready");
 
@@ -270,12 +315,12 @@ test("MeetingSession asks no longer wait for Buddy priming and reuse one Q&A run
       1,
       `Expected one Q&A priming turn, got timeline: ${timeline.join(", ")}`
     );
+    assert.match(startupContexts[0] ?? "", /No live meeting snapshot is provided for this setup turn\./);
+    assert.doesNotMatch(startupContexts[0] ?? "", /Standing context:/);
+    assert.doesNotMatch(startupContexts[0] ?? "", /Meeting brief:/);
     assert.match(questionContexts[0] ?? "", /Meeting title: Async Startup/);
-    assert.match(questionContexts[0] ?? "", /Preferred transcription language: english/);
-    assert.match(questionContexts[0] ?? "", /Static user seed:/);
-    assert.match(questionContexts[0] ?? "", /Prefer concise prompts\./);
-    assert.match(questionContexts[0] ?? "", /Dynamic meeting seed:/);
-    assert.match(questionContexts[0] ?? "", /Land on a rollout owner\./);
+    assert.match(questionContexts[0] ?? "", /Current live note:/);
+    assert.doesNotMatch(questionContexts[0] ?? "", /Land on a rollout owner\./);
     assert.equal(session.getSnapshot().model, "buddy-model");
 
     await session.stop();
@@ -321,7 +366,13 @@ test("MeetingSession Buddy startup failure does not block Q&A and emits Buddy-on
           askBuddy: async () => {
             throw new Error("Q&A client should not handle Buddy turns.");
           },
-          askQuestion: async () => "Q&A still works",
+          askQuestion: async (question) => {
+            if (question.includes("silent setup turn")) {
+              return "READY";
+            }
+
+            return "Q&A still works";
+          },
           close: () => undefined,
         }),
       ]),
@@ -397,7 +448,11 @@ test("MeetingSession keeps Buddy transcript work paused while a question is in f
           askBuddy: async () => {
             throw new Error("Q&A client should not handle Buddy turns.");
           },
-          askQuestion: async () => {
+          askQuestion: async (question) => {
+            if (question.includes("silent setup turn")) {
+              return "READY";
+            }
+
             timeline.push("qa:start");
             const answer = await questionDone;
             timeline.push("qa:end");
@@ -481,7 +536,13 @@ test("MeetingSession stop closes dedicated Buddy and Q&A runtimes cleanly", asyn
           askBuddy: async () => {
             throw new Error("Q&A client should not handle Buddy turns.");
           },
-          askQuestion: async () => "Answer",
+          askQuestion: async (question) => {
+            if (question.includes("silent setup turn")) {
+              return "READY";
+            }
+
+            return "Answer";
+          },
           close: () => {
             closedClients.push("qa");
           },
@@ -507,8 +568,97 @@ test("MeetingSession stop closes dedicated Buddy and Q&A runtimes cleanly", asyn
   }
 });
 
+test("MeetingSession retries Q&A warmup on ask after a background warmup failure", async () => {
+  const previousBasePath = process.env.REALTIMEBUDDY_BASE_PATH;
+  process.env.REALTIMEBUDDY_BASE_PATH = "/tmp/realtimebuddy-qa-retry";
+
+  const timeline: string[] = [];
+
+  try {
+    const session = new MeetingSession({
+      sampleRate: 48_000,
+      title: "Retry Q&A Warmup",
+      includeTabAudio: false,
+      languagePreference: "english",
+      meetingSeed: "Keep the rollout moving.",
+      sendEvent: (event) => {
+        timeline.push(`event:${event.type}`);
+      },
+      createCodexAppServer: createClientFactory([
+        () => ({
+          ready: async () => undefined,
+          getSelectedModel: async () => "buddy-model",
+          askBuddy: async () => createBuddyResult(),
+          askQuestion: async () => {
+            throw new Error("Buddy client should not answer questions.");
+          },
+          close: () => undefined,
+        }),
+        () => ({
+          ready: async () => undefined,
+          getSelectedModel: async () => "qa-model-fail",
+          askBuddy: async () => {
+            throw new Error("Q&A client should not handle Buddy turns.");
+          },
+          askQuestion: async (question) => {
+            if (question.includes("silent setup turn")) {
+              timeline.push("qa:prime:1");
+              throw new Error("Transient Q&A setup failure");
+            }
+
+            throw new Error("First Q&A runtime should not answer user questions.");
+          },
+          close: () => {
+            timeline.push("qa:close:1");
+          },
+        }),
+        () => ({
+          ready: async () => undefined,
+          getSelectedModel: async () => "qa-model-retry",
+          askBuddy: async () => {
+            throw new Error("Q&A client should not handle Buddy turns.");
+          },
+          askQuestion: async (question) => {
+            if (question.includes("silent setup turn")) {
+              timeline.push("qa:prime:2");
+              return "READY";
+            }
+
+            timeline.push("qa:ask:retry");
+            return "Recovered answer";
+          },
+          close: () => undefined,
+        }),
+      ]),
+    });
+
+    ((session as unknown) as { ensureElevenLabsConnected: () => void }).ensureElevenLabsConnected =
+      () => undefined;
+
+    await session.start();
+    await waitForEvent(timeline, "qa:prime:1");
+    await session.ask("Can you still answer after warmup failed?");
+
+    assert.ok(timeline.includes("qa:close:1"));
+    assert.ok(timeline.includes("qa:prime:2"));
+    assert.ok(timeline.includes("qa:ask:retry"));
+
+    const logText = await readFile(session.getSnapshot().logPath, "utf8");
+    assert.match(logText, /"lane":"qa"/);
+    assert.match(logText, /Q&A warmup failed:/);
+
+    await session.stop();
+  } finally {
+    if (previousBasePath === undefined) {
+      delete process.env.REALTIMEBUDDY_BASE_PATH;
+    } else {
+      process.env.REALTIMEBUDDY_BASE_PATH = previousBasePath;
+    }
+  }
+});
+
 function createClientFactory(
-  factories: Array<() => {
+  factories: Array<(options: { developerInstructions: string; workingDirectory: string }) => {
     ready: () => Promise<void>;
     getSelectedModel: () => Promise<string>;
     askBuddy: (prompt: string) => Promise<ReturnType<typeof createBuddyResult>>;
@@ -522,7 +672,7 @@ function createClientFactory(
 ) {
   let index = 0;
 
-  return () => {
+  return (options: { developerInstructions: string; workingDirectory: string }) => {
     const factory = factories[index];
     index += 1;
 
@@ -530,7 +680,7 @@ function createClientFactory(
       throw new Error(`Unexpected extra Codex client creation at index ${index}.`);
     }
 
-    return factory();
+    return factory(options);
   };
 }
 

@@ -1,5 +1,3 @@
-import type { SessionLanguagePreference } from "@realtimebuddy/shared/language-preferences";
-
 const BUDDY_RESPONSE_TYPES = [
   "ask_this",
   "cover_this",
@@ -36,15 +34,6 @@ export type BuddyParseResult =
       failure: BuddyParseFailure;
     };
 
-type BuddyPrimingPromptOptions = {
-  includeTabAudio: boolean;
-  languagePreference: SessionLanguagePreference;
-  meetingSeed: string;
-  meetingTitle: string;
-  staticUserSeed: string;
-  workingDirectory: string;
-};
-
 type BuddyPromptOptions = {
   context: string;
   trigger: string;
@@ -79,8 +68,7 @@ export function buildBuddyDeveloperInstructions() {
     '- "needs_owner": flag a decision or task without a clear owner/next step.',
     '- "important_signal": highlight something important, inconsistent, or off-track.',
     "",
-    "Response modes:",
-    '- If the prompt says `RESPONSE_MODE: user_question`, answer in concise plain text. Do not use JSON.',
+    "Response contract:",
     '- If the prompt says `RESPONSE_MODE: buddy_event`, return exactly one JSON object and nothing else, usually the no-op JSON object.',
     "",
     "Buddy JSON schema for `RESPONSE_MODE: buddy_event`:",
@@ -101,28 +89,13 @@ export function buildBuddyDeveloperInstructions() {
   ].join("\n");
 }
 
-export function buildBuddyPrimingPrompt(options: BuddyPrimingPromptOptions) {
-  const staticSeed = options.staticUserSeed || "None provided.";
-  const meetingSeed = options.meetingSeed || "None provided.";
-
+export function buildBuddyPrimingPrompt() {
   return [
     "RESPONSE_MODE: buddy_event",
     "This is a silent setup turn for the start of a live meeting.",
-    "Use the context below to prime your behavior for future transcript-driven Buddy turns and future user questions in this same session.",
+    "Establish the dedicated Buddy lane for future transcript-driven turns in this same meeting.",
     "Do not surface a card for this setup turn.",
     "Return the required Buddy no-op JSON object only.",
-    "",
-    "Meeting startup context:",
-    `- Meeting title: ${options.meetingTitle}`,
-    `- Audio sources: microphone${options.includeTabAudio ? " + tab audio" : ""}`,
-    `- Preferred transcription language: ${options.languagePreference}`,
-    `- Working directory: ${options.workingDirectory}`,
-    "",
-    "Static user seed:",
-    staticSeed,
-    "",
-    "Dynamic meeting seed:",
-    meetingSeed,
   ].join("\n");
 }
 

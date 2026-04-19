@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 
 import { resolveRealtimeLanguageCode, type SessionLanguagePreference } from "@realtimebuddy/shared/language-preferences";
 import type {
-  BuddyEvent,
   ServerEvent,
   SessionCaptureState,
 } from "@realtimebuddy/shared/protocol";
@@ -15,13 +14,28 @@ import {
 } from "./buddy-contract";
 import { CodexAppServer } from "./codex-app-server";
 import { ElevenLabsBridge } from "./elevenlabs-bridge";
+import {
+  buildBuddyTurnContext,
+  buildQuestionTurnContext,
+  type ProvisionalSegment,
+  type QuestionAnswer,
+  type SharedMeetingSnapshot,
+  type SurfacedBuddyEvent,
+  type TranscriptSegment,
+} from "./meeting-context";
 import { buildMeetingNote } from "./note-builder";
 import {
   readConfiguredBasePathEnv,
   resolveRealtimeBuddyBasePath,
 } from "./persistent-config";
 import {
-  createSessionLaneRuntimes,
+  appendPersistentContext,
+  buildPersistentContext,
+} from "./persistent-context";
+import { buildQuestionDeveloperInstructions } from "./question-contract";
+import {
+  createQuestionLaneRuntime,
+  createSessionLaneRuntimesWithInstructions,
   type BuddyLaneRuntime,
   type CreateCodexAppServer,
   type QuestionLaneRuntime,
@@ -45,29 +59,10 @@ type MeetingSessionOptions = {
   createCodexAppServer?: CreateCodexAppServer;
 };
 
-type TranscriptSegment = {
-  text: string;
-  committedAt: string;
-};
-
-type ProvisionalSegment = {
-  id: string;
-  text: string;
-  provisionalAt: string;
-};
-
-type QuestionAnswer = {
-  question: string;
-  answer: string;
-  askedAt: string;
-};
-
 type BuddyResponseFailure = {
   error: string;
   stage: "json_parse" | "schema_validation";
 };
-
-type SurfacedBuddyEvent = BuddyEvent;
 
 export type MeetingSessionSnapshot = {
   sessionId: string;
@@ -117,7 +112,8 @@ export class MeetingSession {
   private readonly logPath: string;
   private readonly logPathRelative: string;
   private readonly codexWorkingDirectory: string;
-  private readonly codexDeveloperInstructions: string;
+  private readonly buddyDeveloperInstructions: string;
+  private readonly questionDeveloperInstructions: string;
   private readonly createCodexAppServer: CreateCodexAppServer;
   private buddyRuntime: BuddyLaneRuntime | null = null;
   private qaRuntime: QuestionLaneRuntime | null = null;
@@ -142,8 +138,12 @@ export class MeetingSession {
   private bridgeConnectionAttempts = 0;
   private audioQueueOverflowReported = false;
   private buddyStartupPromise: Promise<void> | null = null;
+  private questionStartupPromise: Promise<void> | null = null;
   private buddyModel = "";
+  private questionModel = "";
   private buddyUnavailableMessage = "";
+  private questionWarmupFailedMessage = "";
+  private questionReady = false;
   private stopped = false;
   private lastBuddySurfaceAt = 0;
   private pendingAskCount = 0;
@@ -172,7 +172,18 @@ export class MeetingSession {
     const logFileName = `${safeFileTitle} - ${this.fileStamp(this.startedAt)}.jsonl`;
     this.logPath = path.join(logFolder, logFileName);
     this.logPathRelative = path.relative(BACKEND_APP_DIR, this.logPath);
-    this.codexDeveloperInstructions = buildBuddyDeveloperInstructions();
+    const persistentContext = buildPersistentContext({
+      meetingBrief: this.meetingSeed,
+      standingContext: this.staticUserSeed,
+    });
+    this.buddyDeveloperInstructions = appendPersistentContext(
+      buildBuddyDeveloperInstructions(),
+      persistentContext
+    );
+    this.questionDeveloperInstructions = appendPersistentContext(
+      buildQuestionDeveloperInstructions(),
+      persistentContext
+    );
   }
 
   async start() {
@@ -193,7 +204,8 @@ export class MeetingSession {
       staticUserSeedLength: this.staticUserSeed.length,
       meetingSeed: this.meetingSeed || "none",
       meetingSeedLength: this.meetingSeed.length,
-      codexDeveloperInstructionsLength: this.codexDeveloperInstructions.length,
+      buddyDeveloperInstructionsLength: this.buddyDeveloperInstructions.length,
+      questionDeveloperInstructionsLength: this.questionDeveloperInstructions.length,
     });
 
     this.ensureElevenLabsConnected();
@@ -218,6 +230,7 @@ export class MeetingSession {
 
     this.flushQueuedAudio();
     void this.ensureBuddyReady();
+    void this.warmQuestionRuntime();
   }
 
   getSnapshot(): MeetingSessionSnapshot {
@@ -295,15 +308,8 @@ export class MeetingSession {
     this.clearBuddyTurnTimer();
     const runAsk = this.askQueue.then(async () => {
       await this.commitTranscript();
+      await this.ensureQuestionReady();
       const questionRuntime = this.requireQuestionRuntime();
-      await questionRuntime.initialize({
-        includeTabAudio: this.includeTabAudio,
-        languagePreference: this.languagePreference,
-        meetingSeed: this.meetingSeed,
-        meetingTitle: this.title,
-        staticUserSeed: this.staticUserSeed,
-        workingDirectory: this.codexWorkingDirectory,
-      });
       const model = await questionRuntime.getSelectedModel();
       const askedAt = this.timeStamp(new Date());
       let answer = "";
@@ -316,7 +322,7 @@ export class MeetingSession {
         hadPartialTranscript: Boolean(this.partialTranscript.trim()),
       });
 
-      const context = this.buildQuestionContext();
+      const context = buildQuestionTurnContext(this.buildSharedMeetingSnapshot());
       const text = await questionRuntime.runQuestion(question, context, (delta) => {
         answer += delta;
         pendingAnswerDelta += delta;
@@ -548,25 +554,6 @@ export class MeetingSession {
     }
   }
 
-  private buildQuestionContext() {
-    const transcriptContext = this.transcriptSegments
-      .slice(-24)
-      .map((segment) => `- [${segment.committedAt}] ${segment.text}`)
-      .join("\n");
-    const provisionalContext = this.provisionalSegments
-      .slice(-8)
-      .map((segment) => `- [pending ${segment.provisionalAt}] ${segment.text}`)
-      .join("\n");
-
-    return [
-      this.currentMarkdown(),
-      "",
-      "Recent transcript excerpts:",
-      [transcriptContext, provisionalContext].filter(Boolean).join("\n") ||
-        "- No committed transcript yet.",
-    ].join("\n");
-  }
-
   private currentMarkdown() {
     return buildMeetingNote({
       title: this.title,
@@ -603,9 +590,10 @@ export class MeetingSession {
       return;
     }
 
-    const { buddyRuntime, qaRuntime } = createSessionLaneRuntimes({
+    const { buddyRuntime, qaRuntime } = createSessionLaneRuntimesWithInstructions({
+      buddyDeveloperInstructions: this.buddyDeveloperInstructions,
       createCodexAppServer: this.createCodexAppServer,
-      developerInstructions: this.codexDeveloperInstructions,
+      questionDeveloperInstructions: this.questionDeveloperInstructions,
       workingDirectory: this.codexWorkingDirectory,
     });
     this.buddyRuntime = buddyRuntime;
@@ -632,6 +620,17 @@ export class MeetingSession {
     return this.qaRuntime;
   }
 
+  private buildSharedMeetingSnapshot(): SharedMeetingSnapshot {
+    return {
+      meetingTitle: this.title,
+      markdown: this.currentMarkdown(),
+      transcriptEntries: this.transcriptSegments.map((segment) => ({ ...segment })),
+      provisionalEntries: this.provisionalSegments.map((segment) => ({ ...segment })),
+      buddyEvents: this.buddyEvents.map((event) => ({ ...event })),
+      questionAnswers: this.questionAnswers.map((entry) => ({ ...entry })),
+    };
+  }
+
   private async ensureBuddyReady() {
     if (this.buddyUnavailableMessage || this.buddyModel) {
       return;
@@ -641,14 +640,7 @@ export class MeetingSession {
       this.buddyStartupPromise = (async () => {
         try {
           const buddyRuntime = this.requireBuddyRuntime();
-          const result = await buddyRuntime.initialize({
-            includeTabAudio: this.includeTabAudio,
-            languagePreference: this.languagePreference,
-            meetingSeed: this.meetingSeed,
-            meetingTitle: this.title,
-            staticUserSeed: this.staticUserSeed,
-            workingDirectory: this.codexWorkingDirectory,
-          });
+          const result = await buddyRuntime.initialize();
           const model = await buddyRuntime.getSelectedModel();
           await this.logBuddyPrimingResult(model, result);
           this.buddyModel = model;
@@ -663,7 +655,7 @@ export class MeetingSession {
           void this.logEvent("codex_ready", {
             lane: "buddy",
             model,
-            codexDeveloperInstructionsLength: this.codexDeveloperInstructions.length,
+            codexDeveloperInstructionsLength: this.buddyDeveloperInstructions.length,
           });
         } catch (error) {
           this.buddyUnavailableMessage = `Buddy unavailable: ${String(error)}`;
@@ -700,9 +692,91 @@ export class MeetingSession {
     return this.buddyModel;
   }
 
+  private async warmQuestionRuntime() {
+    try {
+      await this.startQuestionInitialization();
+    } catch {
+      // The first user-facing recovery path happens when ask() retries initialization.
+    }
+  }
+
+  private async ensureQuestionReady() {
+    if (this.questionReady) {
+      return;
+    }
+
+    if (this.questionStartupPromise) {
+      await this.questionStartupPromise.catch(() => undefined);
+      if (this.questionReady) {
+        return;
+      }
+    }
+
+    if (this.questionWarmupFailedMessage) {
+      await this.recreateQuestionRuntime();
+    }
+
+    await this.startQuestionInitialization();
+  }
+
+  private async startQuestionInitialization() {
+    if (this.questionReady) {
+      return;
+    }
+
+    if (!this.questionStartupPromise) {
+      const questionRuntime = this.requireQuestionRuntime();
+      const initialization = (async () => {
+        try {
+          await questionRuntime.initialize();
+          const model = await questionRuntime.getSelectedModel();
+          this.questionReady = true;
+          this.questionModel = model;
+          this.questionWarmupFailedMessage = "";
+          await this.logEvent("codex_ready", {
+            lane: "qa",
+            model,
+            codexDeveloperInstructionsLength: this.questionDeveloperInstructions.length,
+          });
+        } catch (error) {
+          this.questionReady = false;
+          this.questionModel = "";
+          this.questionWarmupFailedMessage = `Q&A warmup failed: ${String(error)}`;
+          await this.logEvent("codex_unavailable", {
+            lane: "qa",
+            message: this.questionWarmupFailedMessage,
+          });
+          throw error;
+        } finally {
+          this.questionStartupPromise = null;
+        }
+      })();
+
+      this.questionStartupPromise = initialization;
+    }
+
+    await this.questionStartupPromise;
+  }
+
+  private async recreateQuestionRuntime() {
+    if (this.qaRuntime) {
+      await this.qaRuntime.close();
+    }
+
+    this.qaRuntime = createQuestionLaneRuntime({
+      createCodexAppServer: this.createCodexAppServer,
+      developerInstructions: this.questionDeveloperInstructions,
+      workingDirectory: this.codexWorkingDirectory,
+    });
+    this.questionStartupPromise = null;
+    this.questionReady = false;
+    this.questionModel = "";
+    this.questionWarmupFailedMessage = "";
+  }
+
   async generateBuddyResponse(
     trigger: string,
-    context = this.buildBuddyContext()
+    context = buildBuddyTurnContext(this.buildSharedMeetingSnapshot())
   ): Promise<{
     response: BuddyResponse;
     parseFailure: BuddyResponseFailure | null;
@@ -897,31 +971,6 @@ export class MeetingSession {
       "";
 
     return mostRecentText.slice(-48);
-  }
-
-  private buildBuddyContext() {
-    const transcriptContext = this.transcriptSegments
-      .slice(-24)
-      .map((segment) => `- [${segment.committedAt}] ${segment.text}`)
-      .join("\n");
-    const buddyEventContext = this.buddyEvents
-      .slice(0, 4)
-      .map(
-        (event) =>
-          `- [${event.createdAt}] ${event.type}: ${event.title}${event.body ? ` — ${event.body}` : ""}`
-      )
-      .join("\n");
-
-    return [
-      `Meeting title: ${this.title}`,
-      `Meeting seed: ${this.meetingSeed || "None provided."}`,
-      "",
-      "Recent committed transcript context:",
-      transcriptContext || "- No committed transcript yet.",
-      "",
-      "Recently surfaced Buddy cards:",
-      buddyEventContext || "- None yet.",
-    ].join("\n");
   }
 
   private normalizeSeed(primary: string | undefined, fallback = "") {

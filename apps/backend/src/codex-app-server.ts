@@ -164,10 +164,9 @@ export function buildQuestionPrompt(options: {
   workingDirectory: string;
 }) {
   return [
-    "RESPONSE_MODE: user_question",
     "Answer the user's question in concise plain text.",
     "",
-    "Current live note:",
+    "Current meeting snapshot:",
     options.context,
     "",
     "Local working directory:",
@@ -176,7 +175,7 @@ export function buildQuestionPrompt(options: {
     "User question:",
     options.question,
     "",
-    "Answer using the transcript and note context above first. If the user explicitly asks about the working tree, a file, or something outside the live note, inspect the relevant files rooted at the working directory above before answering. Be concise and direct. If something is uncertain, say that plainly.",
+    "Answer using the transcript and note context above first. If the user explicitly asks about the working tree, a file, or something outside the live meeting snapshot, inspect the relevant files rooted at the working directory above before answering. Be concise and direct. If something is uncertain, say that plainly.",
   ].join("\n");
 }
 

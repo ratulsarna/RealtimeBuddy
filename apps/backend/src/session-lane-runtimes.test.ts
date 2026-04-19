@@ -55,22 +55,8 @@ test("Buddy lane primes once and reuses one dedicated client for later Buddy tur
     },
   });
 
-  await buddyRuntime.initialize({
-    includeTabAudio: true,
-    languagePreference: "english",
-    meetingSeed: "Land a rollout owner.",
-    meetingTitle: "Design Sync",
-    staticUserSeed: "Prefer concise prompts.",
-    workingDirectory: "/tmp/realtimebuddy-buddy-lane-test",
-  });
-  await buddyRuntime.initialize({
-    includeTabAudio: true,
-    languagePreference: "english",
-    meetingSeed: "Land a rollout owner.",
-    meetingTitle: "Design Sync",
-    staticUserSeed: "Prefer concise prompts.",
-    workingDirectory: "/tmp/realtimebuddy-buddy-lane-test",
-  });
+  await buddyRuntime.initialize();
+  await buddyRuntime.initialize();
   const model = await buddyRuntime.getSelectedModel();
   await buddyRuntime.runBuddyTurn({
     trigger: "New transcript arrived.",
@@ -94,7 +80,7 @@ test("Buddy lane primes once and reuses one dedicated client for later Buddy tur
   assert.equal(closeCalls, 1);
 });
 
-test("Question lane lazily creates its own client and reuses it across follow-up questions", async () => {
+test("Question lane primes once and reuses its dedicated client across follow-up questions", async () => {
   const createdClients: string[] = [];
   const questions: string[] = [];
   const contexts: string[] = [];
@@ -139,14 +125,7 @@ test("Question lane lazily creates its own client and reuses it across follow-up
     },
   });
 
-  await qaRuntime.initialize({
-    includeTabAudio: true,
-    languagePreference: "english",
-    meetingSeed: "Land a rollout owner.",
-    meetingTitle: "Design Sync",
-    staticUserSeed: "Prefer concise prompts.",
-    workingDirectory: "/tmp/realtimebuddy-qa-lane-test",
-  });
+  await qaRuntime.initialize();
   const model = await qaRuntime.getSelectedModel();
   const deltas: string[] = [];
   const answerOne = await qaRuntime.runQuestion("What changed?", "Context", (delta) => {
@@ -165,12 +144,9 @@ test("Question lane lazily creates its own client and reuses it across follow-up
   assert.equal(answerOne, "answer-2");
   assert.equal(answerTwo, "answer-3");
   assert.match(questions[0] ?? "", /silent setup turn/);
-  assert.match(contexts[0] ?? "", /Meeting title: Design Sync/);
-  assert.match(contexts[0] ?? "", /Preferred transcription language: english/);
-  assert.match(contexts[0] ?? "", /Static user seed:/);
-  assert.match(contexts[0] ?? "", /Prefer concise prompts\./);
-  assert.match(contexts[0] ?? "", /Dynamic meeting seed:/);
-  assert.match(contexts[0] ?? "", /Land a rollout owner\./);
+  assert.match(contexts[0] ?? "", /No live meeting snapshot is provided for this setup turn\./);
+  assert.doesNotMatch(contexts[0] ?? "", /Standing context:/);
+  assert.doesNotMatch(contexts[0] ?? "", /Meeting brief:/);
 
   await Promise.all([qaRuntime.close(), qaRuntime.close(), buddyRuntime.close()]);
   assert.equal(closeCalls, 1);
@@ -210,25 +186,11 @@ test("Question lane retries setup after a failed setup turn", async () => {
   });
 
   await assert.rejects(
-    qaRuntime.initialize({
-      includeTabAudio: false,
-      languagePreference: "english",
-      meetingSeed: "",
-      meetingTitle: "Retry Sync",
-      staticUserSeed: "",
-      workingDirectory: "/tmp/realtimebuddy-qa-retry-test",
-    }),
+    qaRuntime.initialize(),
     /Transient Q&A setup failure/
   );
 
-  await qaRuntime.initialize({
-    includeTabAudio: false,
-    languagePreference: "english",
-    meetingSeed: "",
-    meetingTitle: "Retry Sync",
-    staticUserSeed: "",
-    workingDirectory: "/tmp/realtimebuddy-qa-retry-test",
-  });
+  await qaRuntime.initialize();
   const answer = await qaRuntime.runQuestion("What changed?", "Context", () => undefined);
 
   assert.equal(setupAttempts, 2);
@@ -269,22 +231,8 @@ test("Buddy and question lanes never reuse the same underlying client", async ()
     },
   });
 
-  await buddyRuntime.initialize({
-    includeTabAudio: false,
-    languagePreference: "auto",
-    meetingSeed: "",
-    meetingTitle: "Weekly Sync",
-    staticUserSeed: "",
-    workingDirectory: "/tmp/realtimebuddy-separate-lane-test",
-  });
-  await qaRuntime.initialize({
-    includeTabAudio: false,
-    languagePreference: "auto",
-    meetingSeed: "",
-    meetingTitle: "Weekly Sync",
-    staticUserSeed: "",
-    workingDirectory: "/tmp/realtimebuddy-separate-lane-test",
-  });
+  await buddyRuntime.initialize();
+  await qaRuntime.initialize();
   await qaRuntime.runQuestion("What changed?", "Context", () => undefined);
 
   assert.deepEqual(createdClients, ["client-1", "client-2"]);
