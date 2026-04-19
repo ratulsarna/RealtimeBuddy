@@ -59,12 +59,10 @@ test("Buddy lane primes once and reuses one dedicated client for later Buddy tur
   await buddyRuntime.initialize();
   const model = await buddyRuntime.getSelectedModel();
   await buddyRuntime.runBuddyTurn({
-    trigger: "New transcript arrived.",
-    context: "Recent transcript context.",
+    transcriptDelta: "Committed transcript update (1 segment):\n- [10:00:00] New transcript arrived.",
   });
   await buddyRuntime.runBuddyTurn({
-    trigger: "Another transcript arrived.",
-    context: "More transcript context.",
+    transcriptDelta: "Committed transcript update (1 segment):\n- [10:00:05] Another transcript arrived.",
   });
 
   assert.deepEqual(createdClients, ["client-1"]);
@@ -73,8 +71,10 @@ test("Buddy lane primes once and reuses one dedicated client for later Buddy tur
   assert.equal(model, "buddy-model");
   assert.equal(buddyCalls, 3);
   assert.match(prompts[0] ?? "", /silent setup turn/);
-  assert.match(prompts[1] ?? "", /Trigger: New transcript arrived\./);
-  assert.match(prompts[2] ?? "", /Trigger: Another transcript arrived\./);
+  assert.match(prompts[1] ?? "", /Committed transcript update \(1 segment\):/);
+  assert.match(prompts[1] ?? "", /\[10:00:00\] New transcript arrived\./);
+  assert.match(prompts[2] ?? "", /\[10:00:05\] Another transcript arrived\./);
+  assert.doesNotMatch(prompts[1] ?? "", /Conversation context:/);
 
   await Promise.all([buddyRuntime.close(), buddyRuntime.close(), qaRuntime.close()]);
   assert.equal(closeCalls, 1);

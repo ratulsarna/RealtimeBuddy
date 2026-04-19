@@ -49,6 +49,33 @@ function dedupeBuddyEventsById(events: BuddyEvent[]): BuddyEvent[] {
   return result;
 }
 
+function resolvePreferredMicId(
+  devices: AudioInputDevice[],
+  currentSelectedMicId: string
+) {
+  if (currentSelectedMicId && devices.some((device) => device.deviceId === currentSelectedMicId)) {
+    return currentSelectedMicId;
+  }
+
+  const systemDefault = devices.find((device) => device.deviceId === "default");
+  if (systemDefault) {
+    return systemDefault.deviceId;
+  }
+
+  return devices[0]?.deviceId ?? "";
+}
+
+function resolveSelectedMicLabel(
+  devices: AudioInputDevice[],
+  selectedMicId: string
+) {
+  return (
+    devices.find((device) => device.deviceId === selectedMicId)?.label ||
+    devices.find((device) => device.deviceId === "default")?.label ||
+    "System default microphone"
+  );
+}
+
 export function MeetingBuddyApp({
   backendBaseUrl = "",
   initialStaticUserSeed = "",
@@ -60,7 +87,7 @@ export function MeetingBuddyApp({
   const [sessionIdInput, setSessionIdInput] = useState("");
   const [includeTabAudio, setIncludeTabAudio] = useState(false);
   const [languagePreference, setLanguagePreference] = useState<SessionLanguagePreference>("auto");
-  const [title, setTitle] = useState("Session");
+  const [title, setTitle] = useState("");
   const [staticUserSeed, setStaticUserSeed] = useState(initialStaticUserSeed);
   const [meetingSeed, setMeetingSeed] = useState("");
   const [question, setQuestion] = useState("");
@@ -140,6 +167,7 @@ export function MeetingBuddyApp({
     const refreshMicrophones = () => {
       void listAudioInputDevices().then((devices) => {
         setMicrophones(devices);
+        setSelectedMicId((current) => resolvePreferredMicId(devices, current));
       });
     };
 
@@ -169,9 +197,7 @@ export function MeetingBuddyApp({
     };
   }, [backendBaseUrl]);
 
-  const selectedMicLabel =
-    microphones.find((device) => device.deviceId === selectedMicId)?.label ||
-    "Browser default microphone";
+  const selectedMicLabel = resolveSelectedMicLabel(microphones, selectedMicId);
   const connectionStateLabel = formatConnectionStateLabel(connectionState);
   const statusTone = getStatusTone(connectionState);
 
@@ -218,7 +244,7 @@ export function MeetingBuddyApp({
     setSessionMode(null);
     setConnectionState("idle");
     setStatusMessage("Ready when you are.");
-    setTitle("Session");
+    setTitle("");
     captureIntentRef.current = "idle";
     captureForwardingEnabledRef.current = true;
     pendingSocketMessagesRef.current = [];
@@ -916,12 +942,10 @@ export function MeetingBuddyApp({
     onSelectedMicChange: setSelectedMicId,
     onSessionIdInputChange: setSessionIdInput,
     onStaticUserSeedChange: setStaticUserSeed,
-    onTitleChange: setTitle,
     selectedMicId,
     sessionId,
     sessionIdInput,
     staticUserSeed,
-    title,
   } as const;
 
   return (
@@ -959,8 +983,10 @@ export function MeetingBuddyApp({
               canStart={canStart}
               includeTabAudio={includeTabAudio}
               meetingSeed={meetingSeed}
+              title={title}
               onIncludeTabAudioChange={setIncludeTabAudio}
               onMeetingSeedChange={setMeetingSeed}
+              onTitleChange={setTitle}
               onStartSession={startSession}
             />
           </div>

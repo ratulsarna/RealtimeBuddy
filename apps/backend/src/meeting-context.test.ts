@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  buildBuddyTurnContext,
   buildQuestionTurnContext,
   type SharedMeetingSnapshot,
 } from "./meeting-context";
@@ -46,14 +45,5 @@ test("Question turn context carries meeting title, surfaced Buddy cards, and pri
   assert.match(context, /Assign the rollout owner/);
   assert.match(context, /Recent completed Q&A:/);
   assert.match(context, /What changed\?/);
-  assert.doesNotMatch(context, /Land on a rollout owner\./);
-});
-
-test("Buddy turn context keeps meeting identity without replaying the meeting brief", () => {
-  const context = buildBuddyTurnContext(createSharedSnapshot());
-
-  assert.match(context, /Meeting title: Design Sync/);
-  assert.match(context, /Recent committed transcript context:/);
-  assert.match(context, /Recently surfaced Buddy cards:/);
   assert.doesNotMatch(context, /Land on a rollout owner\./);
 });

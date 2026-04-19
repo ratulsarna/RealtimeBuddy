@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildBuddyDeveloperInstructions,
   buildBuddyPrimingPrompt,
+  buildBuddyTurnPrompt,
   parseBuddyResponse,
 } from "./buddy-contract";
 
@@ -11,9 +12,15 @@ test("buildBuddyDeveloperInstructions keeps stable Buddy rules and omits meeting
   const instructions = buildBuddyDeveloperInstructions();
 
   assert.match(instructions, /Buddy JSON schema/);
+  assert.match(instructions, /rolling updates/);
+  assert.match(instructions, /incomplete slice of a still-unfolding thought/);
+  assert.match(instructions, /If the speaker sounds like they are still developing a point/);
+  assert.match(instructions, /Suggest a question only when the point seems to have landed, shifted, paused, or exposed a clear unresolved gap/);
   assert.match(instructions, /Most Buddy turns should return the no-op JSON object\./);
   assert.match(instructions, /Return exactly one Buddy JSON object and nothing else/);
   assert.match(instructions, /Do not treat every transcript update as worthy of a visible response\./);
+  assert.match(instructions, /Use `ask_this` only when a well-timed question would move the conversation forward now/);
+  assert.match(instructions, /Use `important_signal` only for something User should notice right now/);
   assert.match(instructions, /Default to the no-op object unless the newest information is materially new, timely, and useful/);
   assert.doesNotMatch(instructions, /RESPONSE_MODE:/);
   assert.doesNotMatch(instructions, /RESPONSE_MODE: user_question/);
@@ -31,6 +38,20 @@ test("buildBuddyPrimingPrompt includes seed layers and startup context", () => {
   assert.match(prompt, /Return the required Buddy no-op JSON object only\./);
   assert.doesNotMatch(prompt, /Standing context:/);
   assert.doesNotMatch(prompt, /Meeting brief:/);
+});
+
+test("buildBuddyTurnPrompt sends only the transcript delta for the current turn", () => {
+  const prompt = buildBuddyTurnPrompt({
+    transcriptDelta: "Committed transcript update (1 segment):\n- [10:00:00] We still need an owner.",
+  });
+
+  assert.match(prompt, /Return the required Buddy JSON object only\./);
+  assert.match(prompt, /This is a new committed transcript update in the same live meeting thread\./);
+  assert.match(prompt, /The speaker may still be unfolding a point across multiple transcript updates\./);
+  assert.match(prompt, /Committed transcript update \(1 segment\):/);
+  assert.doesNotMatch(prompt, /Conversation context:/);
+  assert.doesNotMatch(prompt, /Recent committed transcript context:/);
+  assert.doesNotMatch(prompt, /Recently surfaced Buddy cards:/);
 });
 
 test("parseBuddyResponse accepts a valid surfaced Buddy card", () => {

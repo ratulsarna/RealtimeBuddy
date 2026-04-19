@@ -20,8 +20,7 @@ export type CreateCodexAppServer = (options: {
 }) => CodexSessionClient;
 
 export type BuddyLaneTurnInput = {
-  trigger: string;
-  context: string;
+  transcriptDelta: string;
 };
 
 export type BuddyLaneRuntime = {
@@ -163,8 +162,7 @@ class DefaultBuddyLaneRuntime implements BuddyLaneRuntime {
 
     return await this.runtime.askBuddy(
       buildBuddyTurnPrompt({
-        context: input.context,
-        trigger: input.trigger,
+        transcriptDelta: input.transcriptDelta,
       })
     );
   }

@@ -15,7 +15,6 @@ import {
 import { CodexAppServer } from "./codex-app-server";
 import { ElevenLabsBridge } from "./elevenlabs-bridge";
 import {
-  buildBuddyTurnContext,
   buildQuestionTurnContext,
   type ProvisionalSegment,
   type QuestionAnswer,
@@ -88,7 +87,6 @@ const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_APP_DIR = path.resolve(SERVER_DIR, "..");
 const MAX_BUFFERED_AUDIO_CHUNKS = 240;
 const BUDDY_TRANSCRIPT_BATCH_WINDOW_MS = 1_500;
-const BUDDY_RECENT_SURFACE_WINDOW_MS = 15_000;
 
 export class MeetingSession {
   readonly id = crypto.randomUUID();
@@ -146,7 +144,6 @@ export class MeetingSession {
   private questionWarmupFailedMessage = "";
   private questionReady = false;
   private stopped = false;
-  private lastBuddySurfaceAt = 0;
 
   constructor(options: MeetingSessionOptions) {
     this.sampleRate = options.sampleRate;
@@ -800,21 +797,19 @@ export class MeetingSession {
   }
 
   async generateBuddyResponse(
-    trigger: string,
-    context = buildBuddyTurnContext(this.buildSharedMeetingSnapshot())
+    transcriptDelta: string
   ): Promise<{
     response: BuddyResponse;
     parseFailure: BuddyResponseFailure | null;
   }> {
     const model = await this.requireBuddyReady();
     const result = await this.requireBuddyRuntime().runBuddyTurn({
-      context,
-      trigger,
+      transcriptDelta,
     });
 
     await this.logEvent("buddy_response_received", {
       model,
-      trigger,
+      trigger: transcriptDelta,
       shouldSurface: result.response.shouldSurface,
       responseType: result.response.type,
       rawText: this.truncateForLog(result.rawText),
@@ -822,7 +817,7 @@ export class MeetingSession {
 
     if (!result.ok) {
       await this.logEvent("buddy_response_parse_failed", {
-        trigger,
+        trigger: transcriptDelta,
         stage: result.failure.stage,
         error: result.failure.error,
         rawText: this.truncateForLog(result.rawText),
@@ -1155,15 +1150,15 @@ export class MeetingSession {
       return;
     }
 
-    const trigger = this.buildBuddyTranscriptTrigger(segments);
+    const transcriptDelta = this.buildBuddyTranscriptDelta(segments);
     await this.logEvent("buddy_transcript_turn_started", {
       segmentCount: segments.length,
       firstCommittedAt: segments[0]?.committedAt ?? "unknown",
       lastCommittedAt: segments[segments.length - 1]?.committedAt ?? "unknown",
-      trigger: this.truncateForLog(trigger),
+      trigger: this.truncateForLog(transcriptDelta),
     });
 
-    const { response, parseFailure } = await this.generateBuddyResponse(trigger);
+    const { response, parseFailure } = await this.generateBuddyResponse(transcriptDelta);
     if (parseFailure) {
       return;
     }
@@ -1188,7 +1183,6 @@ export class MeetingSession {
       source: "transcript",
     };
 
-    this.lastBuddySurfaceAt = Date.now();
     this.buddyEvents.unshift(buddyEvent);
     await this.logEvent("buddy_event_emitted", {
       buddyEventId: buddyEvent.id,
@@ -1203,19 +1197,8 @@ export class MeetingSession {
     });
   }
 
-  private buildBuddyTranscriptTrigger(segments: TranscriptSegment[]) {
-    const recentSurfaceAgeMs =
-      this.lastBuddySurfaceAt > 0 ? Date.now() - this.lastBuddySurfaceAt : null;
-    const recentSurfaceInstruction =
-      recentSurfaceAgeMs !== null && recentSurfaceAgeMs < BUDDY_RECENT_SURFACE_WINDOW_MS
-        ? `A Buddy card was already surfaced ${Math.max(1, Math.round(recentSurfaceAgeMs / 1000))} seconds ago. Stay extra conservative and only surface again if this new transcript creates a meaningfully new, timely intervention.`
-        : "Most transcript updates should return the required no-op JSON. Surface only if this transcript adds something materially new, timely, and useful right now.";
-
+  private buildBuddyTranscriptDelta(segments: TranscriptSegment[]) {
     return [
-      "New committed transcript arrived in the same live meeting thread.",
-      "Use this update to stay aware of the meeting without narrating it.",
-      recentSurfaceInstruction,
-      "",
       `Committed transcript update (${segments.length} segment${segments.length === 1 ? "" : "s"}):`,
       ...segments.map((segment) => `- [${segment.committedAt}] ${segment.text}`),
     ].join("\n");

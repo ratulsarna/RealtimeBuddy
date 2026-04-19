@@ -35,8 +35,7 @@ export type BuddyParseResult =
     };
 
 type BuddyPromptOptions = {
-  context: string;
-  trigger: string;
+  transcriptDelta: string;
 };
 
 const NOOP_BUDDY_RESPONSE: BuddyResponse = {
@@ -55,13 +54,15 @@ export function buildBuddyDeveloperInstructions() {
     "",
     "Core behavior:",
     "- Stay quiet most of the time. THIS IS VERY IMPORTANT. LISTEN, ABSORB, UNDERSTAND, RESEARCH, AND THEN RESPOND IF YOU HAVE SOMETHING USEFUL TO SAY. OTHERWISE, NO-OP.",
-    "- You will be receiving the transcript of the meeting in a rolling fashion, so current context might seem incomplete so you'd have the urge to nudge with question. HOLD THAT URGE and only raise question when it seems like the current point has been made and conversation has moved on to a new topic. Otherwise, you'll keep asking questions or nudges that would be irrelevant in the next moment of the conversation.",
+    "- You will be receiving the transcript in rolling updates, and each update may be only an incomplete slice of a still-unfolding thought.",
+    "- If the speaker sounds like they are still developing a point, listing sub-points, setting up context, or actively answering something in progress, prefer the no-op JSON object.",
+    "- HOLD THE URGE to raise `ask_this` too early. Suggest a question only when the point seems to have landed, shifted, paused, or exposed a clear unresolved gap that asking now would help with.",
     "- Most Buddy turns should return the no-op JSON object.",
     "- Surface only short, timely, actionable nudges.",
     "- Do not treat every transcript update as worthy of a visible response.",
     "- If unsure, if the signal is weak, or if the point is not materially new, return the no-op JSON object.",
     "- Never explain chain-of-thought or hidden reasoning.",
-    "- Ground claims in the live conversation or seeded context below.",
+    "- Ground claims in the live conversation and persistent meeting context.",
     "- If context is weak or uncertain, stay cautious.",
     "",
     "Allowed Buddy intervention types:",
@@ -86,6 +87,8 @@ export function buildBuddyDeveloperInstructions() {
     '- Return strict JSON only. No markdown fences. No commentary before or after.',
     '- Default to the no-op object unless the newest information is materially new, timely, and useful for User right now.',
     '- If nothing timely should be shown, return a no-op object with `shouldSurface: false`, `type: "noop"`, empty `title`, empty `body`, and `suggestedQuestion: null`.',
+    '- Use `ask_this` only when a well-timed question would move the conversation forward now, not when the speaker still appears to be getting to the point.',
+    '- Use `important_signal` only for something User should notice right now, not as a reflective summary of a point that is already clear.',
     "- If `shouldSurface` is true, choose exactly one non-noop type and keep `title` plus `body` short and scannable.",
     "- `suggestedQuestion` is optional and must be null when not needed.",
   ].join("\n");
@@ -104,10 +107,11 @@ export function buildBuddyTurnPrompt(options: BuddyPromptOptions) {
   return [
     "Return the required Buddy JSON object only.",
     "",
-    `Trigger: ${options.trigger}`,
+    "This is a new committed transcript update in the same live meeting thread.",
+    "The speaker may still be unfolding a point across multiple transcript updates. If this update sounds incomplete, prefer the no-op JSON object.",
+    "Suggest `ask_this` only if the point seems complete enough that a question would move the conversation forward now.",
     "",
-    "Conversation context:",
-    options.context,
+    options.transcriptDelta,
   ].join("\n");
 }
 

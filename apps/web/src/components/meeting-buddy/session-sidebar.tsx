@@ -29,12 +29,10 @@ type SessionSidebarProps = {
   onSelectedMicChange: (value: string) => void;
   onSessionIdInputChange: (value: string) => void;
   onStaticUserSeedChange: (value: string) => void;
-  onTitleChange: (value: string) => void;
   selectedMicId: string;
   sessionId: string;
   sessionIdInput: string;
   staticUserSeed: string;
-  title: string;
 };
 
 function SettingsSection({
@@ -75,30 +73,18 @@ export function SessionSidebar({
   onSelectedMicChange,
   onSessionIdInputChange,
   onStaticUserSeedChange,
-  onTitleChange,
   selectedMicId,
   sessionId,
   sessionIdInput,
   staticUserSeed,
-  title,
 }: SessionSidebarProps) {
   const showCompanionSection =
     canStart || Boolean(sessionId) || Boolean(sessionIdInput.trim());
+  const defaultMicrophone = microphones.find((device) => device.deviceId === "default");
+  const nonDefaultMicrophones = microphones.filter((device) => device.deviceId !== "default");
 
   return (
     <div className="space-y-7 px-6 py-6">
-      <SettingsSection title="Meeting">
-        <label className="flex flex-col gap-2">
-          <Label>Session Title</Label>
-          <input
-            className={inputClass}
-            onChange={(event) => onTitleChange(event.target.value)}
-            placeholder="Give this meeting a name"
-            value={title}
-          />
-        </label>
-      </SettingsSection>
-
       <SettingsSection title="Capture">
         <label className="flex flex-col gap-2">
           <Label>Microphone</Label>
@@ -108,8 +94,10 @@ export function SessionSidebar({
             onChange={(event) => onSelectedMicChange(event.target.value)}
             value={selectedMicId}
           >
-            <option value="">Browser default microphone</option>
-            {microphones.map((device) => (
+            <option value={defaultMicrophone?.deviceId ?? ""}>
+              {defaultMicrophone?.label || "System default microphone"}
+            </option>
+            {nonDefaultMicrophones.map((device) => (
               <option key={device.deviceId} value={device.deviceId}>
                 {device.label}
               </option>

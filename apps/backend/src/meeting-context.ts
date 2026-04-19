@@ -28,34 +28,10 @@ export type SharedMeetingSnapshot = {
   questionAnswers: QuestionAnswer[];
 };
 
-const MAX_TURN_TRANSCRIPT_ENTRIES = 24;
 const MAX_TURN_PROVISIONAL_ENTRIES = 8;
 const MAX_TURN_BUDDY_EVENTS = 4;
 const MAX_TURN_QA_ENTRIES = 6;
-
-export function buildBuddyTurnContext(snapshot: SharedMeetingSnapshot) {
-  const transcriptContext = snapshot.transcriptEntries
-    .slice(-MAX_TURN_TRANSCRIPT_ENTRIES)
-    .map((segment) => `- [${segment.committedAt}] ${segment.text}`)
-    .join("\n");
-  const buddyEventContext = snapshot.buddyEvents
-    .slice(0, MAX_TURN_BUDDY_EVENTS)
-    .map(
-      (event) =>
-        `- [${event.createdAt}] ${event.type}: ${event.title}${event.body ? ` — ${event.body}` : ""}`
-    )
-    .join("\n");
-
-  return [
-    `Meeting title: ${snapshot.meetingTitle}`,
-    "",
-    "Recent committed transcript context:",
-    transcriptContext || "- No committed transcript yet.",
-    "",
-    "Recently surfaced Buddy cards:",
-    buddyEventContext || "- None yet.",
-  ].join("\n");
-}
+const MAX_TURN_TRANSCRIPT_ENTRIES = 24;
 
 export function buildQuestionTurnContext(snapshot: SharedMeetingSnapshot) {
   const transcriptContext = snapshot.transcriptEntries

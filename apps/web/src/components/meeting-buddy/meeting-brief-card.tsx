@@ -2,25 +2,31 @@
 
 import {
   ActionButton,
+  Label,
   Toggle,
+  inputClass,
   textareaClass,
   cx,
 } from "@/components/meeting-buddy/ui";
 
 type MeetingBriefCardProps = {
   meetingSeed: string;
+  title: string;
   canStart: boolean;
   includeTabAudio: boolean;
   onMeetingSeedChange: (value: string) => void;
+  onTitleChange: (value: string) => void;
   onIncludeTabAudioChange: (checked: boolean) => void;
   onStartSession: () => void;
 };
 
 export function MeetingBriefCard({
   meetingSeed,
+  title,
   canStart,
   includeTabAudio,
   onMeetingSeedChange,
+  onTitleChange,
   onIncludeTabAudioChange,
   onStartSession,
 }: MeetingBriefCardProps) {
@@ -35,6 +41,17 @@ export function MeetingBriefCard({
         </p>
 
         <div className="mt-10">
+          <label className="mb-4 flex flex-col gap-2">
+            <Label>Session title</Label>
+            <input
+              className={inputClass}
+              disabled={!canStart}
+              onChange={(event) => onTitleChange(event.target.value)}
+              placeholder="e.g. Kshitij Q4 2025 QPR"
+              value={title}
+            />
+          </label>
+
           <textarea
             autoFocus
             className={cx(textareaClass, "min-h-[10rem] rounded-[1.75rem]")}

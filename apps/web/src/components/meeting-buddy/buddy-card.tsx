@@ -179,10 +179,7 @@ export function BuddyCard({
           <p className="mono text-[0.52rem] uppercase tracking-[0.18em] text-[var(--foreground-muted)]">
             Suggested question
           </p>
-          <p className="mt-1 text-[0.72rem] text-[var(--foreground-muted)]">
-            Ask this in the meeting
-          </p>
-          <p className="text-[0.82rem] leading-6 text-[var(--foreground-strong)]">
+          <p className="mt-1 text-[0.82rem] leading-6 text-[var(--foreground-strong)]">
             &ldquo;{event.suggestedQuestion}&rdquo;
           </p>
           <div className="mt-2 flex items-center gap-2">
