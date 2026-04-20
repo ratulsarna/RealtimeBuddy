@@ -8,6 +8,9 @@ staying available for direct Q&A.
 
 https://github.com/user-attachments/assets/0dbab806-6490-4aa9-bcfd-3965dd6ab0e5
 
+**NOTE**: This project was put together during a the Codex Community Hackathon in Delhi so
+it is very much a Work-in-progress.
+
 
 ## Features
 
