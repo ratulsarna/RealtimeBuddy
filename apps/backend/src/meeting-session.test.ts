@@ -43,6 +43,21 @@ function createSurfacedBuddyResult(): BuddyParseResult {
   };
 }
 
+function createPrimedBuddyResult(): BuddyParseResult {
+  return {
+    ok: true as const,
+    response: {
+      shouldSurface: true,
+      type: "primed" as const,
+      title: "Primed for rollout ownership",
+      body: "I'll watch for a clear pilot owner, rollout decision, and moments where concise prompts help keep the room moving.",
+      suggestedQuestion: null,
+    },
+    rawText:
+      '{"shouldSurface":true,"type":"primed","title":"Primed for rollout ownership","body":"I\'ll watch for a clear pilot owner, rollout decision, and moments where concise prompts help keep the room moving.","suggestedQuestion":null}',
+  };
+}
+
 test("resolveConfiguredPath expands a home-relative path", () => {
   assert.equal(
     resolveConfiguredPath("~/DemoVault", "/tmp/fallback"),
@@ -107,7 +122,7 @@ test("MeetingSession defaults notes to ~/.realtimebuddy when no base path env is
   }
 });
 
-test("MeetingSession primes Buddy before emitting buddy_ready and reports the Buddy model only", async () => {
+test("MeetingSession primes Buddy, confirms seeded startup, and reports the Buddy model only", async () => {
   const previousBasePath = process.env.REALTIMEBUDDY_BASE_PATH;
   process.env.REALTIMEBUDDY_BASE_PATH = "/tmp/realtimebuddy-prime-on-start";
 
@@ -144,7 +159,7 @@ test("MeetingSession primes Buddy before emitting buddy_ready and reports the Bu
           askBuddy: async (prompt) => {
             timeline.push("buddy:ask");
             primingPrompt = prompt;
-            return createBuddyResult();
+            return createPrimedBuddyResult();
           },
           askQuestion: async () => {
             throw new Error("Buddy client should not answer questions during startup.");
@@ -184,6 +199,7 @@ test("MeetingSession primes Buddy before emitting buddy_ready and reports the Bu
     await waitForEvent(timeline, "event:buddy_ready");
 
     const buddyReadyEvent = events.find((event) => event.type === "buddy_ready");
+    const primedEvent = events.find((event) => event.type === "buddy_event");
     const snapshot = session.getSnapshot();
 
     assert.match(buddyDeveloperInstructions, /Standing context:/);
@@ -195,14 +211,30 @@ test("MeetingSession primes Buddy before emitting buddy_ready and reports the Bu
     assert.match(qaDeveloperInstructions, /Meeting brief:/);
     assert.match(qaDeveloperInstructions, /Land on a rollout owner\./);
     assert.match(primingPrompt, /silent setup turn/);
-    assert.match(primingPrompt, /Return the required Buddy no-op JSON object only\./);
+    assert.match(primingPrompt, /return a visible `primed` Buddy JSON object/);
+    assert.match(primingPrompt, /short first-person ack summary/);
     assert.doesNotMatch(primingPrompt, /Standing context:/);
     assert.doesNotMatch(primingPrompt, /Meeting brief:/);
     assert.ok(
       timeline.indexOf("buddy:ask") < timeline.indexOf("event:buddy_ready"),
       `Expected priming before buddy_ready, got timeline: ${timeline.join(", ")}`
     );
+    assert.ok(
+      timeline.indexOf("buddy:ask") < timeline.indexOf("event:buddy_event") &&
+        timeline.indexOf("event:buddy_event") < timeline.indexOf("event:buddy_ready"),
+      `Expected seeded priming confirmation before buddy_ready, got timeline: ${timeline.join(", ")}`
+    );
     assert.equal(snapshot.model, "buddy-model");
+    assert.equal(snapshot.buddyEvents.length, 1);
+    assert.equal(snapshot.buddyEvents[0]?.type, "primed");
+    assert.equal(snapshot.buddyEvents[0]?.source, "startup");
+    assert.equal(snapshot.buddyEvents[0]?.title, "Primed for rollout ownership");
+    assert.match(snapshot.buddyEvents[0]?.body ?? "", /clear pilot owner/);
+    assert.equal(primedEvent?.type, "buddy_event");
+    if (primedEvent?.type === "buddy_event") {
+      assert.equal(primedEvent.event.type, "primed");
+      assert.equal(primedEvent.event.source, "startup");
+    }
     assert.equal(buddyReadyEvent?.type, "buddy_ready");
     if (buddyReadyEvent?.type === "buddy_ready") {
       assert.equal(buddyReadyEvent.model, "buddy-model");

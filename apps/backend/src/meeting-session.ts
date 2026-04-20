@@ -660,8 +660,16 @@ export class MeetingSession {
           const buddyRuntime = this.requireBuddyRuntime();
           const result = await buddyRuntime.initialize();
           const model = await buddyRuntime.getSelectedModel();
-          await this.logBuddyPrimingResult(model, result);
           this.buddyModel = model;
+          await this.logBuddyPrimingResult(model, result);
+          if (this.stopping || this.stopped) {
+            return;
+          }
+
+          if (this.hasStartupSeed()) {
+            await this.emitBuddyPrimedEvent(result.ok ? result.response : null);
+          }
+
           if (this.stopping || this.stopped) {
             return;
           }
@@ -861,12 +869,67 @@ export class MeetingSession {
       return;
     }
 
+    if (result.response.type === "primed") {
+      return;
+    }
+
     if (result.response.shouldSurface || result.response.type !== "noop") {
       await this.logEvent("buddy_priming_surface_ignored", {
         model,
         responseType: result.response.type,
       });
     }
+  }
+
+  private hasStartupSeed() {
+    return Boolean(this.meetingSeed || this.staticUserSeed);
+  }
+
+  private startupSeedAckFallback() {
+    const parts = [
+      this.meetingSeed ? `Meeting focus: ${this.truncateSeedForAck(this.meetingSeed)}` : "",
+      this.staticUserSeed ? `Standing context: ${this.truncateSeedForAck(this.staticUserSeed)}` : "",
+    ].filter(Boolean);
+
+    return parts.join(" ");
+  }
+
+  private truncateSeedForAck(value: string) {
+    const normalized = value.replace(/\s+/g, " ").trim();
+    if (normalized.length <= 140) {
+      return normalized;
+    }
+
+    return `${normalized.slice(0, 137)}...`;
+  }
+
+  private async emitBuddyPrimedEvent(response: BuddyResponse | null) {
+    const useModelAck =
+      response?.shouldSurface === true &&
+      response.type === "primed" &&
+      Boolean(response.title.trim()) &&
+      Boolean(response.body.trim());
+    const buddyEvent: SurfacedBuddyEvent = {
+      id: crypto.randomUUID(),
+      type: "primed",
+      title: useModelAck ? response.title : "Primed for this meeting",
+      body: useModelAck ? response.body : this.startupSeedAckFallback(),
+      suggestedQuestion: null,
+      createdAt: this.timeStamp(new Date()),
+      source: "startup",
+    };
+
+    this.buddyEvents.unshift(buddyEvent);
+    await this.logEvent("buddy_primed_event_emitted", {
+      buddyEventId: buddyEvent.id,
+      title: this.truncateForLog(buddyEvent.title, 160),
+      body: this.truncateForLog(buddyEvent.body, 320),
+      fromModelAck: useModelAck,
+    });
+    this.emitEvent({
+      type: "buddy_event",
+      event: buddyEvent,
+    });
   }
 
   private ensureElevenLabsConnected() {
@@ -1163,7 +1226,13 @@ export class MeetingSession {
       return;
     }
 
-    if (!response.shouldSurface || response.type === "noop" || this.stopping || this.stopped) {
+    if (
+      !response.shouldSurface ||
+      response.type === "noop" ||
+      response.type === "primed" ||
+      this.stopping ||
+      this.stopped
+    ) {
       await this.logEvent("buddy_transcript_turn_noop", {
         segmentCount: segments.length,
         firstCommittedAt: segments[0]?.committedAt ?? "unknown",

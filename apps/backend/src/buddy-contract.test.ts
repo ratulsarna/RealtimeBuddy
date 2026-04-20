@@ -21,6 +21,7 @@ test("buildBuddyDeveloperInstructions keeps stable Buddy rules and omits meeting
   assert.match(instructions, /Do not treat every transcript update as worthy of a visible response\./);
   assert.match(instructions, /Use `ask_this` only when a well-timed question would move the conversation forward now/);
   assert.match(instructions, /Use `important_signal` only for something User should notice right now/);
+  assert.match(instructions, /Use `primed` only during the startup setup turn/);
   assert.match(instructions, /Default to the no-op object unless the newest information is materially new, timely, and useful/);
   assert.doesNotMatch(instructions, /RESPONSE_MODE:/);
   assert.doesNotMatch(instructions, /RESPONSE_MODE: user_question/);
@@ -35,7 +36,9 @@ test("buildBuddyPrimingPrompt includes seed layers and startup context", () => {
 
   assert.match(prompt, /silent setup turn/);
   assert.match(prompt, /dedicated Buddy lane/);
-  assert.match(prompt, /Return the required Buddy no-op JSON object only\./);
+  assert.match(prompt, /return a visible `primed` Buddy JSON object/);
+  assert.match(prompt, /short first-person ack summary/);
+  assert.match(prompt, /If no meaningful startup context was provided/);
   assert.doesNotMatch(prompt, /Standing context:/);
   assert.doesNotMatch(prompt, /Meeting brief:/);
 });
@@ -48,10 +51,32 @@ test("buildBuddyTurnPrompt sends only the transcript delta for the current turn"
   assert.match(prompt, /Return the required Buddy JSON object only\./);
   assert.match(prompt, /This is a new committed transcript update in the same live meeting thread\./);
   assert.match(prompt, /The speaker may still be unfolding a point across multiple transcript updates\./);
+  assert.match(prompt, /Do not use the startup-only `primed` type/);
   assert.match(prompt, /Committed transcript update \(1 segment\):/);
   assert.doesNotMatch(prompt, /Conversation context:/);
   assert.doesNotMatch(prompt, /Recent committed transcript context:/);
   assert.doesNotMatch(prompt, /Recently surfaced Buddy cards:/);
+});
+
+test("parseBuddyResponse accepts a valid priming ack", () => {
+  const result = parseBuddyResponse(
+    JSON.stringify({
+      shouldSurface: true,
+      type: "primed",
+      title: "Primed for pilot close",
+      body: "I'll watch for rollout ownership, pilot decision points, and places where concise prompts help you steer the room.",
+      suggestedQuestion: null,
+    })
+  );
+
+  assert.equal(result.ok, true);
+  if (!result.ok) {
+    return;
+  }
+
+  assert.equal(result.response.type, "primed");
+  assert.equal(result.response.shouldSurface, true);
+  assert.match(result.response.body, /rollout ownership/);
 });
 
 test("parseBuddyResponse accepts a valid surfaced Buddy card", () => {

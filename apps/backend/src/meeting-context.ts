@@ -43,6 +43,7 @@ export function buildQuestionTurnContext(snapshot: SharedMeetingSnapshot) {
     .map((segment) => `- [pending ${segment.provisionalAt}] ${segment.text}`)
     .join("\n");
   const buddyEventContext = snapshot.buddyEvents
+    .filter((event) => event.source === "transcript")
     .slice(0, MAX_TURN_BUDDY_EVENTS)
     .map(
       (event) =>

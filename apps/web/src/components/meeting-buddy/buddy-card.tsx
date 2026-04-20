@@ -108,6 +108,27 @@ const TYPE_META: Record<BuddyEventType, TypeMeta> = {
       </svg>
     ),
   },
+  primed: {
+    label: "Primed",
+    tintBorder: "border-[rgba(137,199,255,0.28)]",
+    tintBg: "bg-[rgba(137,199,255,0.07)]",
+    tintText: "text-[rgba(180,220,255,0.95)]",
+    dotColor: "bg-[rgba(137,199,255,0.9)]",
+    icon: ({ className }) => (
+      <svg
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+        viewBox="0 0 24 24"
+      >
+        <path d="M20 6L9 17l-5-5" />
+        <path d="M14 6h6v6" />
+      </svg>
+    ),
+  },
 };
 
 function formatRelative(createdIso: string, nowMs: number): string {

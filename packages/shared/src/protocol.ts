@@ -6,7 +6,8 @@ export type BuddyEventType =
   | "ask_this"
   | "cover_this"
   | "needs_owner"
-  | "important_signal";
+  | "important_signal"
+  | "primed";
 
 export type BuddyEvent = {
   id: string;
@@ -15,7 +16,7 @@ export type BuddyEvent = {
   body: string;
   suggestedQuestion: string | null;
   createdAt: string;
-  source: "transcript";
+  source: "startup" | "transcript";
 };
 
 export type ClientEvent =

@@ -63,7 +63,7 @@ function groupForWrapup(events: BuddyEvent[]): WrapGroup[] {
     followups: [],
   };
 
-  const ordering: Record<BuddyEventType, keyof typeof buckets> = {
+  const ordering: Partial<Record<BuddyEventType, keyof typeof buckets>> = {
     important_signal: "signals",
     ask_this: "questions",
     needs_owner: "followups",
@@ -71,6 +71,7 @@ function groupForWrapup(events: BuddyEvent[]): WrapGroup[] {
   };
 
   for (const event of events) {
+    if (event.source !== "transcript") continue;
     const bucket = ordering[event.type] ?? "followups";
     buckets[bucket]!.push(event);
   }
@@ -166,9 +167,13 @@ export function BuddyLane({
     [connectionState, events, hasPreservedMeetingState, nowMs]
   );
 
+  const wrapupEvents = useMemo(
+    () => events.filter((event) => event.source === "transcript"),
+    [events]
+  );
   const wrapGroups = useMemo(
-    () => (state === "wrapup" ? groupForWrapup(events) : []),
-    [state, events]
+    () => (state === "wrapup" ? groupForWrapup(wrapupEvents) : []),
+    [state, wrapupEvents]
   );
 
   const isWrapup = state === "wrapup";
@@ -194,7 +199,7 @@ export function BuddyLane({
                   Meeting recap
                 </p>
                 <p className="mt-2 text-sm leading-6 text-[var(--foreground-muted)]">
-                  {events.length} card{events.length === 1 ? "" : "s"} from this session.
+                  {wrapupEvents.length} card{wrapupEvents.length === 1 ? "" : "s"} from this session.
                 </p>
               </div>
               {wrapGroups.length > 0 ? (

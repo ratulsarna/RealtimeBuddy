@@ -39,6 +39,7 @@ const EVENT_TYPE_LABELS: Record<BuddyEventType, string> = {
   cover_this: "Cover this",
   needs_owner: "Needs owner",
   important_signal: "Important signal",
+  primed: "Primed",
 };
 
 function formatEventsForClipboard(events: BuddyEvent[]): string {

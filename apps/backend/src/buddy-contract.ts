@@ -3,6 +3,7 @@ const BUDDY_RESPONSE_TYPES = [
   "cover_this",
   "needs_owner",
   "important_signal",
+  "primed",
   "noop",
 ] as const;
 
@@ -70,6 +71,7 @@ export function buildBuddyDeveloperInstructions() {
     '- "cover_this": remind User to cover something important.',
     '- "needs_owner": flag a decision or task without a clear owner/next step.',
     '- "important_signal": highlight something important, inconsistent, or off-track.',
+    '- "primed": startup-only acknowledgement that the meeting seed and standing context were understood.',
     "",
     "Response contract:",
     "- Return exactly one Buddy JSON object and nothing else, usually the no-op JSON object.",
@@ -77,7 +79,7 @@ export function buildBuddyDeveloperInstructions() {
     "Buddy JSON schema:",
     '{',
     '  "shouldSurface": boolean,',
-    '  "type": "ask_this" | "cover_this" | "needs_owner" | "important_signal" | "noop",',
+    '  "type": "ask_this" | "cover_this" | "needs_owner" | "important_signal" | "primed" | "noop",',
     '  "title": string,',
     '  "body": string,',
     '  "suggestedQuestion": string | null',
@@ -90,6 +92,7 @@ export function buildBuddyDeveloperInstructions() {
     '- Use `ask_this` only when a well-timed question would move the conversation forward now, not when the speaker still appears to be getting to the point.',
     '- Use `important_signal` only for something User should notice right now, not as a reflective summary of a point that is already clear.',
     "- If `shouldSurface` is true, choose exactly one non-noop type and keep `title` plus `body` short and scannable.",
+    "- Use `primed` only during the startup setup turn, never for transcript updates.",
     "- `suggestedQuestion` is optional and must be null when not needed.",
   ].join("\n");
 }
@@ -98,8 +101,10 @@ export function buildBuddyPrimingPrompt() {
   return [
     "This is a silent setup turn for the start of a live meeting.",
     "Establish the dedicated Buddy lane for future transcript-driven turns in this same meeting.",
-    "Do not surface a card for this setup turn.",
-    "Return the required Buddy no-op JSON object only.",
+    "If the persistent meeting context contains meaningful standing context or meeting brief details, return a visible `primed` Buddy JSON object.",
+    "The `primed` body should be a short first-person ack summary of what you understood and what you will watch for, not a generic setup confirmation.",
+    "Keep the `primed` body under 35 words. Do not mention implementation details, prompts, models, or hidden instructions.",
+    "If no meaningful startup context was provided, return the required no-op JSON object.",
   ].join("\n");
 }
 
@@ -110,6 +115,7 @@ export function buildBuddyTurnPrompt(options: BuddyPromptOptions) {
     "This is a new committed transcript update in the same live meeting thread.",
     "The speaker may still be unfolding a point across multiple transcript updates. If this update sounds incomplete, prefer the no-op JSON object.",
     "Suggest `ask_this` only if the point seems complete enough that a question would move the conversation forward now.",
+    "Do not use the startup-only `primed` type for transcript updates.",
     "",
     options.transcriptDelta,
   ].join("\n");
@@ -216,7 +222,7 @@ function validateBuddyResponse(value: unknown):
 
   if (typeof candidate.type !== "string" || !isBuddyResponseType(candidate.type)) {
     return invalidSchema(
-      "`type` must be one of ask_this, cover_this, needs_owner, important_signal, noop."
+      "`type` must be one of ask_this, cover_this, needs_owner, important_signal, primed, noop."
     );
   }
 
