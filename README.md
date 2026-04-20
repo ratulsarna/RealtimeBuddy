@@ -59,6 +59,15 @@ pnpm dev
 ```
 
 This starts the backend on `http://localhost:3001` and the web app on `http://localhost:3000`.
+The web app binds to `localhost` by default. If you intentionally want to reach
+it from another device on your Tailnet, run:
+
+```bash
+pnpm dev:web:tailscale
+```
+
+Keep the web app reachable only through localhost or your private Tailnet; do
+not expose its port directly to the public internet.
 
 ## Quick Test Flow
 

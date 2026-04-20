@@ -12,5 +12,5 @@
     "type": "module"
   },
   "permissions": ["offscreen", "storage", "tabs", "tabCapture"],
-  "host_permissions": ["<all_urls>"]
+  "host_permissions": ["http://*/*", "https://*/*"]
 }

@@ -9,10 +9,12 @@
     "dev": "concurrently -k -n backend,web \"pnpm dev:backend\" \"pnpm dev:web\"",
     "dev:backend": "pnpm --filter @realtimebuddy/backend dev",
     "dev:web": "pnpm --filter @realtimebuddy/web dev",
+    "dev:web:tailscale": "pnpm --filter @realtimebuddy/web dev:tailscale",
     "build": "pnpm -r --if-present build",
     "start": "concurrently -k -n backend,web \"pnpm start:backend\" \"pnpm start:web\"",
     "start:backend": "pnpm --filter @realtimebuddy/backend start",
     "start:web": "pnpm --filter @realtimebuddy/web start",
+    "start:web:tailscale": "pnpm --filter @realtimebuddy/web start:tailscale",
     "lint": "pnpm -r --if-present lint",
     "test": "pnpm -r --if-present test"
   }
